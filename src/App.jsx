@@ -2,14 +2,39 @@ import React, { useState, useEffect } from 'react';
 import FHIR from 'fhirclient';
 import './App.css';
 
-// Where "Switch Patient / Clinician" sends the browser after clearing the
-// local session. An EHR-launched SMART app can't pick its own patient or
-// user — that context is granted by the EHR at launch time — so the only
-// correct way to change it is to end this session and re-launch from
-// wherever launches actually originate. In this sandbox that's the SMART
-// Launcher; in a real hospital deployment this would point at that EHR's
-// own patient-chart/app-launcher URL instead.
+// A convenience link for testing only — see the "signed out" screen below.
+// Real EHRs don't have a public "launcher" page; a clinician there just
+// clicks the app icon from inside a patient's chart, so this app has no
+// general way to know where to send someone back to. That's why signing
+// out shows plain instructions instead of guessing a redirect.
 const LAUNCHER_RETURN_URL = 'https://launch.smarthealthit.org/';
+
+const ACTIVITY_STORAGE_PREFIX = 'claimauth_activity_';
+
+// This log lives only in this browser's localStorage, keyed per patient.
+// It is NOT a payer/clearinghouse record — there is no connection to one —
+// and it is NOT shared with other devices, other users, or the EHR. It's a
+// local "what did I already do for this patient today" trail, useful
+// precisely because nothing else in this demo persists across a reload.
+const loadActivityLog = (patientKey) => {
+  if (!patientKey) return [];
+  try {
+    const raw = localStorage.getItem(`${ACTIVITY_STORAGE_PREFIX}${patientKey}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch (err) {
+    console.warn('Could not read local activity log', err);
+    return [];
+  }
+};
+
+const saveActivityLog = (patientKey, entries) => {
+  if (!patientKey) return;
+  try {
+    localStorage.setItem(`${ACTIVITY_STORAGE_PREFIX}${patientKey}`, JSON.stringify(entries));
+  } catch (err) {
+    console.warn('Could not save local activity log', err);
+  }
+};
 
 const HIGHLIGHT_STYLES = {
   indigo: { background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid rgba(99,102,241,0.18)', color: '#3730a3' },
@@ -122,6 +147,8 @@ export default function App() {
   const [patient, setPatient] = useState(null);
   const [insurance, setInsurance] = useState('Checking registry...');
   const [loading, setLoading] = useState(true);
+  const [sessionEnded, setSessionEnded] = useState(false);
+  const [activityLog, setActivityLog] = useState([]);
   const [aiStatus, setAiStatus] = useState('idle');
   const [activeTab, setActiveTab] = useState('copilot');
   const [clinician, setClinician] = useState('Loading provider...');
@@ -548,7 +575,7 @@ export default function App() {
         setSpecialty(practitionerContext.specialty || 'Clinical Care');
         setLocation(practitionerContext.location || 'Care Facility');
         setProcedureInfo(resolvedProcedure);
-        setPatient({ name: patientName, dob });
+        setPatient({ name: patientName, dob, id: patientData?.id || null });
         setInsurance(payerName);
         setCostBreakdown(resolvedCostBreakdown);
         setClinicalEvidence(resolvedEvidence);
@@ -571,6 +598,46 @@ export default function App() {
       });
   }, []);
 
+  // Load this patient's local activity log once we know who they are.
+  // IMPORTANT: keyed only by the real FHIR Patient.id, never by name.
+  // Synthea's synthetic population reuses common names constantly, so two
+  // different patients named e.g. "John" would otherwise share one
+  // localStorage bucket and one could see the other's history — a real
+  // patient-mixup risk, not just a hypothetical one. If we don't have a
+  // stable id, we don't persist at all rather than guess with a name.
+  useEffect(() => {
+    if (!patient?.id) {
+      setActivityLog([]);
+      return;
+    }
+    setActivityLog(loadActivityLog(patient.id));
+  }, [patient?.id]);
+
+  const logActivity = (label, meta = {}) => {
+    const entry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      timestamp: new Date().toISOString(),
+      label,
+      ...meta,
+    };
+    setActivityLog((prev) => {
+      const next = [entry, ...prev].slice(0, 25);
+      if (patient?.id) {
+        saveActivityLog(patient.id, next);
+      }
+      // No stable id → this session's entries still show in the UI below,
+      // but aren't written anywhere, so there's nothing to collide with.
+      return next;
+    });
+  };
+
+  const clearActivityLog = () => {
+    if (patient?.id) {
+      saveActivityLog(patient.id, []);
+    }
+    setActivityLog([]);
+  };
+
   // There's no in-app way to switch patients while staying in this SMART
   // session — the EHR grants that context at launch, not the app. The
   // honest fix is to end the session cleanly and send the user back to
@@ -578,7 +645,7 @@ export default function App() {
   // and relaunch.
   const handleRestartSession = () => {
     const confirmed = window.confirm(
-      "This ends your current session. You'll be returned to the launch screen to sign in and pick a different patient — this app can't switch patients on its own. Continue?"
+      "This ends your current session. To view a different patient, you'll need to return to your EHR and relaunch ClaimAuth from that patient's chart. Continue?"
     );
     if (!confirmed) return;
 
@@ -588,7 +655,7 @@ export default function App() {
       console.warn('Could not clear session storage before restarting', err);
     }
 
-    window.location.href = LAUNCHER_RETURN_URL;
+    setSessionEnded(true);
   };
 
   const handleAiPreFill = () => {
@@ -596,19 +663,22 @@ export default function App() {
     setTimeout(() => {
       setReviewStep(0);
       setAiStatus('complete');
+      logActivity('AI drafted a justification', { procedure: procedureDisplay });
     }, 2000);
   };
 
   const handleSubmit = () => {
     const submittedAt = new Date();
     const formatDate = (d) => d.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const referenceId = generateAuthorizationNumber();
 
     setAuthDetails({
-      referenceId: generateAuthorizationNumber(),
+      referenceId,
       submittedAt: formatDate(submittedAt),
       status: 'Marked as submitted — no payer endpoint connected',
       payload: buildPasClaimPayload(),
     });
+    logActivity('Submitted prior authorization request (local only)', { procedure: procedureDisplay, referenceId });
     setAiStatus('submitted');
   };
 
@@ -664,6 +734,26 @@ export default function App() {
       { sequence: 1, category: { text: 'Clinical justification' }, valueString: justificationText },
     ],
   });
+
+  if (sessionEnded) {
+    return (
+      <div className="loading-screen" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #eff6ff, #f8fafc)' }}>
+        <div className="loading-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', minWidth: '320px', maxWidth: '360px', background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '22px', padding: '32px 28px', boxShadow: '0 25px 60px rgba(15, 23, 42, 0.08)', textAlign: 'center' }}>
+          <div aria-hidden="true" style={{ fontSize: '32px', marginBottom: '4px' }}>🔒</div>
+          <div className="loading-title" style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>You've been signed out</div>
+          <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+            To review a different patient, close this and relaunch ClaimAuth from that patient's chart in your EHR. ClaimAuth can't select a patient on its own — your EHR controls that.
+          </p>
+          <a
+            href={LAUNCHER_RETURN_URL}
+            style={{ marginTop: '16px', fontSize: '11px', color: '#94a3b8', textDecoration: 'underline' }}
+          >
+            Testing in the SMART Launcher sandbox? Reopen it here
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -1032,23 +1122,43 @@ export default function App() {
               </>
             ) : (
               <div className="audit-panel" style={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(226,232,240,0.95)', borderRadius: '18px', padding: '18px', boxShadow: '0 12px 28px rgba(148, 163, 184, 0.08)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Payer Portal History</h3>
-
-                <div className="log-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 12px', borderRadius: '14px', border: '1px solid rgba(226,232,240,1)', background: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
                   <div>
-                    <div className="log-title" style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{procedureDisplay}</div>
-                    <div className="log-meta" style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>Processed: 2 hours ago</div>
+                    <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Local Activity Log</h3>
+                    <p style={{ margin: '6px 0 0', fontSize: '11.5px', lineHeight: 1.5, color: '#94a3b8', maxWidth: '380px' }}>
+                      Recorded on this device only, for {patient?.name || 'this patient'}. Not synced with your EHR, a clearinghouse, or any payer — there's no live connection for it to sync to.
+                      {!patient?.id && ' No stable patient ID was available from this launch, so this session\u2019s entries won\u2019t be saved after you reload — that\u2019s intentional, to avoid mixing up patients who share a name.'}
+                    </p>
                   </div>
-                  <div className="status-tag success" style={{ borderRadius: '10px', padding: '6px 8px', fontSize: '11px', fontWeight: 800, whiteSpace: 'nowrap', background: '#ecfdf5', color: '#15803d', border: '1px solid rgba(22,163,74,0.15)' }}>Approved</div>
+                  {activityLog.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearActivityLog}
+                      style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textDecoration: 'underline', whiteSpace: 'nowrap' }}
+                    >
+                      Clear log
+                    </button>
+                  )}
                 </div>
 
-                <div className="log-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 12px', borderRadius: '14px', border: '1px solid rgba(226,232,240,1)', background: '#f8fafc' }}>
-                  <div>
-                    <div className="log-title" style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{insurance}</div>
-                    <div className="log-meta" style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>Processed: Yesterday</div>
+                {activityLog.length === 0 ? (
+                  <div style={{ fontSize: '12.5px', color: '#94a3b8', fontStyle: 'italic', padding: '8px 2px' }}>
+                    No activity recorded yet for this patient. Actions like drafting a justification or submitting a request will show up here.
                   </div>
-                  <div className="status-tag info" style={{ borderRadius: '10px', padding: '6px 8px', fontSize: '11px', fontWeight: 800, whiteSpace: 'nowrap', background: '#eff6ff', color: '#1d4ed8', border: '1px solid rgba(59,130,246,0.15)' }}>Auto-Cleared</div>
-                </div>
+                ) : (
+                  activityLog.map((entry) => (
+                    <div key={entry.id} className="log-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 12px', borderRadius: '14px', border: '1px solid rgba(226,232,240,1)', background: '#f8fafc' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="log-title" style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{entry.label}</div>
+                        <div className="log-meta" style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
+                          {new Date(entry.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                          {entry.procedure ? ` • ${entry.procedure}` : ''}
+                          {entry.referenceId ? ` • Ref: ${entry.referenceId}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </main>
