@@ -198,13 +198,6 @@ export default function App() {
     return { title: 'requested clinical service', code: 'N/A' };
   };
 
-  const normalizePractitionerRequest = (userId) => {
-    if (!userId) return null;
-    if (/^Practitioner\//i.test(userId)) return userId;
-    if (/^[0-9a-f-]{36}$/i.test(userId)) return `Practitioner/${userId}`;
-    return userId;
-  };
-
   const resolvePractitionerMeta = (practitionerData) => {
     if (!practitionerData) {
       return {
@@ -271,8 +264,6 @@ export default function App() {
           'Bypass-Tunnel-Reminder': 'true',
         };
 
-        const practitionerResource = client.userId ? normalizePractitionerRequest(client.userId) : null;
-
         // IMPORTANT: every one of these has its own .catch(). With Promise.all,
         // a single rejected promise (e.g. Coverage or ServiceRequest returning
         // a 403/404, which is common when a scope or resource isn't supported)
@@ -289,9 +280,13 @@ export default function App() {
               return null;
             })
           : Promise.resolve(null);
-        const practitionerPromise = practitionerResource
-          ? client.request(practitionerResource).catch((err) => {
-              console.warn('FHIR: Practitioner request failed', err);
+        // client.user (not client.userId, which doesn't exist on the SMART
+        // client) resolves the launched user's fhirUser / id_token claims and
+        // reads whichever resource that points to — normally Practitioner in
+        // a provider EHR launch.
+        const practitionerPromise = client.user && typeof client.user.read === 'function'
+          ? client.user.read().catch((err) => {
+              console.warn('FHIR: user.read() (practitioner) failed', err);
               return null;
             })
           : Promise.resolve(null);
