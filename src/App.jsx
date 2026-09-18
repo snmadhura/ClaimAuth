@@ -41,6 +41,13 @@ export default function App() {
     return { title: 'requested clinical service', code: 'N/A' };
   };
 
+  const normalizePractitionerRequest = (userId) => {
+    if (!userId) return null;
+    if (/^Practitioner\//i.test(userId)) return userId;
+    if (/^[0-9a-f-]{36}$/i.test(userId)) return `Practitioner/${userId}`;
+    return userId;
+  };
+
   const resolvePractitionerMeta = (practitionerData) => {
     if (!practitionerData) {
       return {
@@ -62,7 +69,9 @@ export default function App() {
         ? practitionerData.specialty[0]?.text || practitionerData.specialty[0]?.coding?.[0]?.display || 'Clinical Care'
         : practitionerData.specialty && practitionerData.specialty.text
           ? practitionerData.specialty.text
-          : 'Clinical Care';
+          : practitionerData.qualification && Array.isArray(practitionerData.qualification)
+            ? practitionerData.qualification[0]?.code?.text || practitionerData.qualification[0]?.code?.coding?.[0]?.display || 'Clinical Care'
+            : 'Clinical Care';
 
     const practitionerLocation =
       practitionerData.address && Array.isArray(practitionerData.address) && practitionerData.address.length > 0
@@ -105,9 +114,10 @@ export default function App() {
           'Bypass-Tunnel-Reminder': 'true',
         };
 
+        const practitionerResource = client.userId ? normalizePractitionerRequest(client.userId) : null;
         const patientPromise = client.patient.read();
         const coveragePromise = client.request(`Coverage?patient=${client.patient.id}`);
-        const practitionerPromise = client.userId ? client.request(client.userId) : Promise.resolve(null);
+        const practitionerPromise = practitionerResource ? client.request(practitionerResource).catch(() => null) : Promise.resolve(null);
         const serviceRequestPromise = client.patient.id ? client.request(`ServiceRequest?patient=${client.patient.id}`) : Promise.resolve(null);
         const procedurePromise = client.patient.id ? client.request(`Procedure?patient=${client.patient.id}`) : Promise.resolve(null);
 
@@ -124,7 +134,7 @@ export default function App() {
           patientName = [givenText, familyName].filter(Boolean).join(' ') || patientName;
         }
 
-        const dob = patientData && patientData.birthDate ? patientData.birthDate : 'Unknown DOB';
+        const dob = patientData && patientData.birthDate ? patientData.birthDate : 'NA';
 
         let payerName = 'Coverage pending';
         if (coverageData && coverageData.entry && Array.isArray(coverageData.entry) && coverageData.entry.length > 0) {
