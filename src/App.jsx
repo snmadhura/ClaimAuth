@@ -2,6 +2,15 @@ import React, { useState, useEffect } from 'react';
 import FHIR from 'fhirclient';
 import './App.css';
 
+// Where "Switch Patient / Clinician" sends the browser after clearing the
+// local session. An EHR-launched SMART app can't pick its own patient or
+// user — that context is granted by the EHR at launch time — so the only
+// correct way to change it is to end this session and re-launch from
+// wherever launches actually originate. In this sandbox that's the SMART
+// Launcher; in a real hospital deployment this would point at that EHR's
+// own patient-chart/app-launcher URL instead.
+const LAUNCHER_RETURN_URL = 'https://launch.smarthealthit.org/';
+
 const HIGHLIGHT_STYLES = {
   indigo: { background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid rgba(99,102,241,0.18)', color: '#3730a3' },
   green: { background: 'linear-gradient(135deg, #ecfdf5, #f0fdf4)', border: '1px solid rgba(34,197,94,0.18)', color: '#166534' },
@@ -67,7 +76,6 @@ function EvidenceCategory({ categoryKey, items }) {
 const REVIEW_STEPS = [
   { key: 'justification', label: 'Justification' },
   { key: 'evidence', label: 'Evidence' },
-  { key: 'payload', label: 'Payload' },
   { key: 'submit', label: 'Submit' },
 ];
 
@@ -563,6 +571,26 @@ export default function App() {
       });
   }, []);
 
+  // There's no in-app way to switch patients while staying in this SMART
+  // session — the EHR grants that context at launch, not the app. The
+  // honest fix is to end the session cleanly and send the user back to
+  // wherever they launch from, so they can pick a different patient/user
+  // and relaunch.
+  const handleRestartSession = () => {
+    const confirmed = window.confirm(
+      "This ends your current session. You'll be returned to the launch screen to sign in and pick a different patient — this app can't switch patients on its own. Continue?"
+    );
+    if (!confirmed) return;
+
+    try {
+      sessionStorage.clear();
+    } catch (err) {
+      console.warn('Could not clear session storage before restarting', err);
+    }
+
+    window.location.href = LAUNCHER_RETURN_URL;
+  };
+
   const handleAiPreFill = () => {
     setAiStatus('scanning');
     setTimeout(() => {
@@ -707,6 +735,13 @@ export default function App() {
               <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'flex-start' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', color: '#4338ca', border: '1px solid rgba(99,102,241,0.2)', padding: '7px 10px', fontSize: '11px', fontWeight: 700 }}>{insurance || 'Aetna Choice POS II'}</span>
               </div>
+              <button
+                type="button"
+                onClick={handleRestartSession}
+                style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '5px', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: '#64748b' }}
+              >
+                🔄 Wrong patient? Switch patient / clinician
+              </button>
             </div>
 
             <div className="context-card" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(248,250,252,0.96))', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '18px', padding: '18px', boxShadow: '0 12px 26px rgba(148, 163, 184, 0.08)' }}>
@@ -874,17 +909,6 @@ export default function App() {
                       )}
 
                       {reviewStep === 2 && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
-                            This is the FHIR <code>Claim</code> resource (<code>use: "preauthorization"</code>) shaped to HL7's Da Vinci Prior Authorization Support (PAS) guide — what a real integration would <code>$submit</code> to a payer's or clearinghouse's endpoint.
-                          </p>
-                          <pre style={{ margin: 0, maxHeight: '320px', overflow: 'auto', background: '#0f172a', color: '#c7d2fe', borderRadius: '10px', padding: '14px', fontSize: '11px', lineHeight: 1.6, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
-                            {JSON.stringify(buildPasClaimPayload(), null, 2)}
-                          </pre>
-                        </div>
-                      )}
-
-                      {reviewStep === 3 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                           <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
                             Final check before submitting. This confirms what's about to go out and to whom.
@@ -901,6 +925,20 @@ export default function App() {
                             Submit Prior Authorization Request
                           </button>
                           <div className="transmission-note" style={{ fontSize: '12px', lineHeight: 1.6, color: '#475569', padding: '0 2px' }}>{transmissionSubtitle}</div>
+
+                          <button
+                            type="button"
+                            onClick={() => setPayloadExpanded((prev) => !prev)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', border: 0, background: 'transparent', padding: '2px 0', cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: '#94a3b8', alignSelf: 'flex-start' }}
+                            aria-expanded={payloadExpanded}
+                          >
+                            {payloadExpanded ? '▲' : '▼'} Technical details (FHIR payload, for IT/audit — not needed to submit)
+                          </button>
+                          {payloadExpanded && (
+                            <pre style={{ margin: 0, maxHeight: '260px', overflow: 'auto', background: '#0f172a', color: '#c7d2fe', borderRadius: '10px', padding: '14px', fontSize: '11px', lineHeight: 1.6, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
+                              {JSON.stringify(buildPasClaimPayload(), null, 2)}
+                            </pre>
+                          )}
                         </div>
                       )}
 
