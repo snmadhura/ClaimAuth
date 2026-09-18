@@ -8,9 +8,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [aiStatus, setAiStatus] = useState('idle');
   const [activeTab, setActiveTab] = useState('copilot');
-  const [clinician, setClinician] = useState('Dr. Antonia Stark');
-  const [specialty, setSpecialty] = useState('Allergy / Immunology');
-  const [location, setLocation] = useState('North Clinic');
+  const [clinician, setClinician] = useState('Loading provider...');
+  const [specialty, setSpecialty] = useState('Loading specialty...');
+  const [location, setLocation] = useState('Loading location...');
   const [procedureInfo, setProcedureInfo] = useState({ title: 'requested clinical service', code: 'N/A' });
 
   const resolveProcedureContext = (serviceRequestData, procedureData) => {
@@ -44,35 +44,35 @@ export default function App() {
   const resolvePractitionerMeta = (practitionerData) => {
     if (!practitionerData) {
       return {
-        name: 'Dr. Antonia Stark',
-        specialty: 'Allergy / Immunology',
-        location: 'North Clinic',
+        name: 'Active Clinical Provider',
+        specialty: 'Clinical Care',
+        location: 'Care Facility',
       };
     }
 
     const nameEntry = practitionerData.name && Array.isArray(practitionerData.name) ? practitionerData.name[0] : null;
     const practitionerName = nameEntry
       ? `${nameEntry.prefix ? `${nameEntry.prefix.join(' ')} ` : ''}${nameEntry.given ? nameEntry.given.join(' ') : ''} ${nameEntry.family || ''}`.trim()
-      : 'Dr. Antonia Stark';
+      : 'Active Clinical Provider';
 
     const specialtyText =
       practitionerData.specialty && Array.isArray(practitionerData.specialty)
-        ? practitionerData.specialty[0]?.text || practitionerData.specialty[0]?.coding?.[0]?.display || 'Allergy / Immunology'
+        ? practitionerData.specialty[0]?.text || practitionerData.specialty[0]?.coding?.[0]?.display || 'Clinical Care'
         : practitionerData.specialty && practitionerData.specialty.text
           ? practitionerData.specialty.text
-          : 'Allergy / Immunology';
+          : 'Clinical Care';
 
     const practitionerLocation =
       practitionerData.address && Array.isArray(practitionerData.address) && practitionerData.address.length > 0
-        ? practitionerData.address[0].city || practitionerData.address[0].state || 'North Clinic'
+        ? practitionerData.address[0].city || practitionerData.address[0].state || 'Care Facility'
         : practitionerData.extension && Array.isArray(practitionerData.extension)
-          ? practitionerData.extension.find((ext) => ext.url && /location|practice/i.test(ext.url))?.valueString || 'North Clinic'
-          : 'North Clinic';
+          ? practitionerData.extension.find((ext) => ext.url && /location|practice/i.test(ext.url))?.valueString || 'Care Facility'
+          : 'Care Facility';
 
     return {
-      name: practitionerName || 'Dr. Antonia Stark',
-      specialty: specialtyText || 'Allergy / Immunology',
-      location: practitionerLocation || 'North Clinic',
+      name: practitionerName || 'Active Clinical Provider',
+      specialty: specialtyText || 'Clinical Care',
+      location: practitionerLocation || 'Care Facility',
     };
   };
 
@@ -112,7 +112,7 @@ export default function App() {
         return Promise.all([patientPromise, coveragePromise, practitionerPromise, serviceRequestPromise, procedurePromise]);
       })
       .then(([patientData, coverageData, practitionerData, serviceRequestData, procedureData]) => {
-        let patientName = 'Robert Chen';
+        let patientName = 'Selected patient';
 
         if (patientData && patientData.name && Array.isArray(patientData.name) && patientData.name.length > 0) {
           const firstNameEntry = patientData.name[0];
@@ -122,9 +122,9 @@ export default function App() {
           patientName = [givenText, familyName].filter(Boolean).join(' ') || patientName;
         }
 
-        const dob = patientData && patientData.birthDate ? patientData.birthDate : '1978-04-12';
+        const dob = patientData && patientData.birthDate ? patientData.birthDate : 'Unknown DOB';
 
-        let payerName = 'Aetna Choice POS II';
+        let payerName = 'Coverage pending';
         if (coverageData && coverageData.entry && Array.isArray(coverageData.entry) && coverageData.entry.length > 0) {
           const firstEntry = coverageData.entry[0];
           const payor = firstEntry && firstEntry.resource && firstEntry.resource.payor ? firstEntry.resource.payor : null;
@@ -136,9 +136,9 @@ export default function App() {
         const practitionerContext = resolvePractitionerMeta(practitionerData);
         const resolvedProcedure = resolveProcedureContext(serviceRequestData, procedureData);
 
-        setClinician(practitionerContext.name || 'Dr. Antonia Stark');
-        setSpecialty(practitionerContext.specialty || 'Allergy / Immunology');
-        setLocation(practitionerContext.location || 'North Clinic');
+        setClinician(practitionerContext.name || 'Active Clinical Provider');
+        setSpecialty(practitionerContext.specialty || 'Clinical Care');
+        setLocation(practitionerContext.location || 'Care Facility');
         setProcedureInfo(resolvedProcedure);
         setPatient({ name: patientName, dob });
         setInsurance(payerName);
@@ -146,12 +146,12 @@ export default function App() {
       })
       .catch((err) => {
         console.warn('FHIR Framework using fallback parameters:', err);
-        setClinician('Dr. Antonia Stark');
-        setSpecialty('Allergy / Immunology');
-        setLocation('North Clinic');
+        setClinician('Active Clinical Provider');
+        setSpecialty('Clinical Care');
+        setLocation('Care Facility');
         setProcedureInfo({ title: 'requested clinical service', code: 'N/A' });
-        setPatient({ name: 'Robert Chen', dob: '1978-04-12' });
-        setInsurance('Aetna Choice POS II');
+        setPatient({ name: 'Selected patient', dob: 'Unknown DOB' });
+        setInsurance('Coverage pending');
         setLoading(false);
       });
   }, []);
@@ -257,11 +257,11 @@ export default function App() {
               <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderRadius: '12px', background: '#f8fafc', border: '1px solid rgba(226,232,240,1)', padding: '10px 12px' }}>
                   <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Specialty</span>
-                  <strong style={{ color: '#0f172a', fontSize: '13px' }}>Allergy / Immunology</strong>
+                  <strong style={{ color: '#0f172a', fontSize: '13px' }}>{specialty}</strong>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderRadius: '12px', background: '#f8fafc', border: '1px solid rgba(226,232,240,1)', padding: '10px 12px' }}>
                   <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Location</span>
-                  <strong style={{ color: '#0f172a', fontSize: '13px' }}>North Clinic</strong>
+                  <strong style={{ color: '#0f172a', fontSize: '13px' }}>{location}</strong>
                 </div>
               </div>
             </div>
