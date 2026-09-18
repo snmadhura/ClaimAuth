@@ -8,11 +8,17 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [aiStatus, setAiStatus] = useState('idle');
   const [activeTab, setActiveTab] = useState('copilot');
+  const [clinician, setClinician] = useState('Dr. Antonia Stark');
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const launchParam = urlParams.get('launch');
     const issParam = urlParams.get('iss');
+    const clinicianParam = urlParams.get('clinician');
+
+    if (clinicianParam) {
+      setClinician(clinicianParam);
+    }
 
     if (launchParam && issParam) {
       FHIR.oauth2.authorize({
@@ -35,18 +41,33 @@ export default function App() {
         return Promise.all([patientPromise, coveragePromise]);
       })
       .then(([patientData, coverageData]) => {
-        const name = `${patientData.name[0].given.join(' ')} ${patientData.name[0].family}`;
-        const dob = patientData.birthDate;
+        let patientName = 'Robert Chen';
+
+        if (patientData && patientData.name && Array.isArray(patientData.name) && patientData.name.length > 0) {
+          const firstNameEntry = patientData.name[0];
+          const givenNames = firstNameEntry.given && Array.isArray(firstNameEntry.given) ? firstNameEntry.given : [];
+          const familyName = firstNameEntry.family || '';
+          const givenText = givenNames.length > 0 ? givenNames.join(' ') : '';
+          patientName = [givenText, familyName].filter(Boolean).join(' ') || patientName;
+        }
+
+        const dob = patientData && patientData.birthDate ? patientData.birthDate : '1978-04-12';
 
         let payerName = 'Aetna Choice POS II';
-        if (coverageData && coverageData.entry && coverageData.entry.length > 0) {
+        if (coverageData && coverageData.entry) {
           const firstEntry = coverageData.entry[0];
-          if (firstEntry && firstEntry.resource && firstEntry.resource.payor && firstEntry.resource.payor.length > 0) {
-            payerName = firstEntry.resource.payor[0].display || 'Aetna Choice POS II';
+          if (
+            firstEntry &&
+            firstEntry.resource &&
+            firstEntry.resource.payor &&
+            Array.isArray(firstEntry.resource.payor) &&
+            firstEntry.resource.payor.length > 0
+          ) {
+            payerName = firstEntry.resource.payor[0].display || payerName;
           }
         }
 
-        setPatient({ name, dob });
+        setPatient({ name: patientName, dob });
         setInsurance(payerName);
         setLoading(false);
       })
@@ -62,6 +83,9 @@ export default function App() {
     setAiStatus('scanning');
     setTimeout(() => setAiStatus('complete'), 2000);
   };
+
+  const patientInitial = patient?.name ? patient.name.charAt(0).toUpperCase() : 'P';
+  const justificationText = `Patient records managed under ${clinician} track ongoing cytopenia criteria. Bone marrow core extraction is essential to exclude underlying myelodysplasia parameters under primary diagnostic profile C92.01.`;
 
   if (loading) {
     return (
@@ -80,12 +104,17 @@ export default function App() {
       <div className="claim-panel">
         <header className="panel-header">
           <div className="brand-block">
-            <div className="brand-mark">CA</div>
-            <div>
+            <div className="brand-mark" aria-label="ClaimAuth secure status">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 2.75l6.75 2.5V11c0 4.08-2.53 7.8-6.75 10.25C7.78 18.8 5.25 15.08 5.25 11V5.25L12 2.75zm-1.4 7.5l-1.35 1.35 2.75 2.75 5.5-5.5L16.6 7.5l-4.25 4.25-1.35-1.35z" />
+              </svg>
+            </div>
+
+            <div className="brand-copy">
               <h1>
                 Claim<span>Auth</span>
               </h1>
-              <p>Automation Workspace • v2.0</p>
+              <p>Active Provider session: {clinician}</p>
             </div>
           </div>
 
@@ -115,9 +144,14 @@ export default function App() {
         <section className="patient-card">
           <div className="section-label">Current Chart Stream</div>
           <div className="patient-row">
-            <div>
-              <h2>{patient?.name}</h2>
-              <p>DOB: {patient?.dob}</p>
+            <div className="patient-identity-block">
+              <div className="patient-avatar" aria-label="Patient initial badge">
+                {patientInitial}
+              </div>
+              <div>
+                <h2>{patient?.name}</h2>
+                <p>DOB: {patient?.dob}</p>
+              </div>
             </div>
 
             <div className="insurance-badge">{insurance}</div>
@@ -165,10 +199,7 @@ export default function App() {
 
                     <div className="field-group">
                       <label>Generated Justification Summary</label>
-                      <textarea
-                        readOnly
-                        defaultValue="Patient presentation reveals chronic cytopenia of uncertain etiology. Biopsy metrics are clinically necessary to exclude active bone marrow myelodysplasia parameters under primary diagnosis C92.01."
-                      />
+                      <textarea readOnly value={justificationText} />
                     </div>
 
                     <button type="button" className="inverse-button" onClick={() => setAiStatus('submitted')}>
