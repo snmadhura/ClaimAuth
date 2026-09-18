@@ -36,11 +36,14 @@ export default function App() {
           ...client.requestHeaders,
           'Bypass-Tunnel-Reminder': 'true',
         };
+
         const patientPromise = client.patient.read();
         const coveragePromise = client.request(`Coverage?patient=${client.patient.id}`);
-        return Promise.all([patientPromise, coveragePromise]);
+        const practitionerPromise = client.userId ? client.request(client.userId) : Promise.resolve(null);
+
+        return Promise.all([patientPromise, coveragePromise, practitionerPromise]);
       })
-      .then(([patientData, coverageData]) => {
+      .then(([patientData, coverageData, practitionerData]) => {
         let patientName = 'Robert Chen';
 
         if (patientData && patientData.name && Array.isArray(patientData.name) && patientData.name.length > 0) {
@@ -67,12 +70,30 @@ export default function App() {
           }
         }
 
+        let realDocName = 'Active Institutional Provider';
+
+        if (practitionerData && practitionerData.name && practitionerData.name[0]) {
+          const practitionerName = practitionerData.name[0];
+          const prefixText = practitionerName.prefix && Array.isArray(practitionerName.prefix)
+            ? practitionerName.prefix.join(' ') + ' '
+            : '';
+          const givenText = practitionerName.given && Array.isArray(practitionerName.given)
+            ? practitionerName.given.join(' ')
+            : '';
+          const familyText = practitionerName.family || '';
+
+          realDocName = `${practitionerName.prefix ? practitionerName.prefix.join(' ') + ' ' : ''}${practitionerName.given ? practitionerName.given.join(' ') : ''} ${practitionerName.family || ''}`.trim();
+          realDocName = `${prefixText}${givenText}${familyText ? ` ${familyText}` : ''}`.trim() || 'Active Institutional Provider';
+        }
+
+        setClinician(realDocName || 'Active Institutional Provider');
         setPatient({ name: patientName, dob });
         setInsurance(payerName);
         setLoading(false);
       })
       .catch((err) => {
         console.warn('FHIR Framework using fallback parameters:', err);
+        setClinician('Active Institutional Provider');
         setPatient({ name: 'Robert Chen', dob: '1978-04-12' });
         setInsurance('Aetna Choice POS II');
         setLoading(false);
@@ -86,6 +107,7 @@ export default function App() {
 
   const patientInitial = patient?.name ? patient.name.charAt(0).toUpperCase() : 'P';
   const justificationText = `Patient records managed under ${clinician} track ongoing cytopenia criteria. Bone marrow core extraction is essential to exclude underlying myelodysplasia parameters under primary diagnostic profile C92.01.`;
+  const alertBannerText = `${clinician} submitted an order for ${patient?.name || 'the selected patient'} for CPT 38221 (Bone Marrow Biopsy). Payer guidelines mandate clinical approval prior to appointment booking.`;
 
   if (loading) {
     return (
@@ -174,7 +196,7 @@ export default function App() {
             <>
               <div className="alert-banner">
                 <div className="alert-title">⚡ Intercepted Missing Authorization</div>
-                Dr. Evans submitted an order for <strong>CPT 38221 (Bone Marrow Biopsy)</strong>. Payer guidelines mandate clinical approval prior to appointment booking.
+                {alertBannerText}
               </div>
 
               <div className="assistant-panel">
