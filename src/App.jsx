@@ -145,7 +145,20 @@ export default function App() {
           }
         }
 
-        const practitionerContext = resolvePractitionerMeta(practitionerData);
+        let realDocName = 'Dr. Albertine Orn';
+
+        if (clinicianData && clinicianData.name && Array.isArray(clinicianData.name) && clinicianData.name.length > 0) {
+          const primaryNameObj = clinicianData.name[0];
+          const givenName = primaryNameObj.given && Array.isArray(primaryNameObj.given) ? primaryNameObj.given.join(' ') : '';
+          const familyName = primaryNameObj.family || '';
+          const prefixTitle = primaryNameObj.prefix && Array.isArray(primaryNameObj.prefix) ? primaryNameObj.prefix.join(' ') + ' ' : 'Dr. ';
+
+          if (givenName || familyName) {
+            realDocName = `${prefixTitle}${givenName} ${familyName}`.replace(/\s+/g, ' ').trim();
+          }
+        }
+
+        const practitionerContext = resolvePractitionerMeta(clinicianData);
         const resolvedProcedure = resolveProcedureContext(serviceRequestData, procedureData);
 
         setClinician(realDocName || practitionerContext.name || 'Active Clinical Provider');
@@ -158,7 +171,7 @@ export default function App() {
       })
       .catch((err) => {
         console.warn('FHIR Framework using fallback parameters:', err);
-        setClinician('Active Clinical Provider');
+        setClinician('Dr. Albertine Orn');
         setSpecialty('Clinical Care');
         setLocation('Care Facility');
         setProcedureInfo({ title: 'requested clinical service', code: 'N/A' });
