@@ -27,6 +27,43 @@ function EOBField({ label, value, highlight }) {
   );
 }
 
+const EVIDENCE_CATEGORY_META = {
+  conditions: { label: 'Conditions', icon: '🩺' },
+  medications: { label: 'Medications', icon: '💊' },
+  procedures: { label: 'Procedures', icon: '📋' },
+  allergies: { label: 'Allergies', icon: '⚠️' },
+};
+
+function EvidenceCategory({ categoryKey, items }) {
+  const meta = EVIDENCE_CATEGORY_META[categoryKey];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>
+        <span aria-hidden="true">{meta.icon}</span>
+        <span>{meta.label}</span>
+        <span style={{ color: '#94a3b8', fontWeight: 700 }}>({items.length})</span>
+      </div>
+      {items.length === 0 ? (
+        <div style={{ fontSize: '12px', color: '#94a3b8', fontStyle: 'italic', padding: '8px 10px' }}>None on file for this patient.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {items.map((item) => (
+            <div
+              key={item.id}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', borderRadius: '10px', background: '#f8fafc', border: '1px solid rgba(226,232,240,1)', padding: '8px 10px' }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</div>
+                <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '2px' }}>{item.date}{item.status ? ` • ${item.status}` : ''}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [patient, setPatient] = useState(null);
   const [insurance, setInsurance] = useState('Checking registry...');
@@ -39,6 +76,8 @@ export default function App() {
   const [procedureInfo, setProcedureInfo] = useState({ title: 'requested clinical service', code: 'N/A' });
   const [costBreakdown, setCostBreakdown] = useState(null);
   const [authDetails, setAuthDetails] = useState(null);
+  const [clinicalEvidence, setClinicalEvidence] = useState(null);
+  const [evidenceExpanded, setEvidenceExpanded] = useState(false);
 
   const formatMoney = (value) => {
     const num = typeof value === 'number' ? value : parseFloat(value);
@@ -237,6 +276,73 @@ export default function App() {
     };
   };
 
+  const formatEvidenceDate = (dateStr) => {
+    if (!dateStr) return 'Date not recorded';
+    const parsed = new Date(dateStr);
+    if (Number.isNaN(parsed.getTime())) return dateStr;
+    return parsed.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const codeableConceptText = (codeable) => {
+    if (!codeable) return null;
+    if (codeable.text) return codeable.text;
+    if (Array.isArray(codeable.coding) && codeable.coding.length > 0) {
+      return codeable.coding[0].display || codeable.coding[0].code || null;
+    }
+    return null;
+  };
+
+  // Pulls the patient's structured chart entries (not free-text notes — this
+  // sandbox, like most FHIR test servers, doesn't have real clinician
+  // narrative text) so the justification can be checked against something
+  // concrete instead of taken on faith.
+  const resolveClinicalEvidence = (conditionData, medicationData, allergyData, procedureData) => {
+    const mapEntries = (bundle, mapper) => {
+      if (!bundle || !Array.isArray(bundle.entry)) return [];
+      return bundle.entry
+        .map((entry) => entry && entry.resource)
+        .filter(Boolean)
+        .map(mapper)
+        .filter((item) => item && item.label);
+    };
+
+    const conditions = mapEntries(conditionData, (r) => ({
+      id: r.id || `${r.resourceType}-${Math.random()}`,
+      label: codeableConceptText(r.code) || 'Documented condition',
+      date: formatEvidenceDate(r.onsetDateTime || (r.onsetPeriod && r.onsetPeriod.start) || r.recordedDate),
+      status: (r.clinicalStatus && codeableConceptText(r.clinicalStatus)) || null,
+    })).slice(0, 5);
+
+    const medications = mapEntries(medicationData, (r) => ({
+      id: r.id || `${r.resourceType}-${Math.random()}`,
+      label: codeableConceptText(r.medicationCodeableConcept) || 'Documented medication',
+      date: formatEvidenceDate(r.authoredOn),
+      status: r.status || null,
+    })).slice(0, 5);
+
+    const allergies = mapEntries(allergyData, (r) => ({
+      id: r.id || `${r.resourceType}-${Math.random()}`,
+      label: codeableConceptText(r.code) || 'Documented allergy',
+      date: formatEvidenceDate(r.recordedDate),
+      status: (r.clinicalStatus && codeableConceptText(r.clinicalStatus)) || null,
+    })).slice(0, 5);
+
+    const procedures = mapEntries(procedureData, (r) => ({
+      id: r.id || `${r.resourceType}-${Math.random()}`,
+      label: codeableConceptText(r.code) || 'Documented procedure',
+      date: formatEvidenceDate(r.performedDateTime || (r.performedPeriod && r.performedPeriod.start)),
+      status: r.status || null,
+    })).slice(0, 5);
+
+    return {
+      conditions,
+      medications,
+      allergies,
+      procedures,
+      totalCount: conditions.length + medications.length + allergies.length + procedures.length,
+    };
+  };
+
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const launchParam = urlParams.get('launch');
@@ -308,10 +414,42 @@ export default function App() {
               return null;
             })
           : Promise.resolve(null);
+        // These three back the "clinical evidence reviewed" panel — the
+        // structured chart data the justification is actually grounded in,
+        // so a clinician can verify the AI's reasoning instead of trusting
+        // a bare "PASS" label.
+        const conditionPromise = client.patient.id
+          ? client.request(`Condition?patient=${client.patient.id}`).catch((err) => {
+              console.warn('FHIR: Condition request failed', err);
+              return null;
+            })
+          : Promise.resolve(null);
+        const medicationPromise = client.patient.id
+          ? client.request(`MedicationRequest?patient=${client.patient.id}`).catch((err) => {
+              console.warn('FHIR: MedicationRequest request failed', err);
+              return null;
+            })
+          : Promise.resolve(null);
+        const allergyPromise = client.patient.id
+          ? client.request(`AllergyIntolerance?patient=${client.patient.id}`).catch((err) => {
+              console.warn('FHIR: AllergyIntolerance request failed', err);
+              return null;
+            })
+          : Promise.resolve(null);
 
-        return Promise.all([patientPromise, coveragePromise, practitionerPromise, serviceRequestPromise, procedurePromise, eobPromise]);
+        return Promise.all([
+          patientPromise,
+          coveragePromise,
+          practitionerPromise,
+          serviceRequestPromise,
+          procedurePromise,
+          eobPromise,
+          conditionPromise,
+          medicationPromise,
+          allergyPromise,
+        ]);
       })
-      .then(([patientData, coverageData, clinicianData, serviceRequestData, procedureData, eobData]) => {
+      .then(([patientData, coverageData, clinicianData, serviceRequestData, procedureData, eobData, conditionData, medicationData, allergyData]) => {
         let patientName = 'Selected patient';
 
         if (patientData && patientData.name && Array.isArray(patientData.name) && patientData.name.length > 0) {
@@ -349,6 +487,7 @@ export default function App() {
         const practitionerContext = resolvePractitionerMeta(clinicianData);
         const resolvedProcedure = resolveProcedureContext(serviceRequestData, procedureData);
         const resolvedCostBreakdown = resolveCostBreakdown(coverageData, eobData);
+        const resolvedEvidence = resolveClinicalEvidence(conditionData, medicationData, allergyData, procedureData);
 
         setClinician(realDocName || practitionerContext.name || 'Active Clinical Provider');
         setSpecialty(practitionerContext.specialty || 'Clinical Care');
@@ -357,6 +496,7 @@ export default function App() {
         setPatient({ name: patientName, dob });
         setInsurance(payerName);
         setCostBreakdown(resolvedCostBreakdown);
+        setClinicalEvidence(resolvedEvidence);
         setLoading(false);
       })
       .catch((err) => {
@@ -371,6 +511,7 @@ export default function App() {
         setPatient({ name: 'Selected patient', dob: 'Unknown DOB' });
         setInsurance('Coverage pending');
         setCostBreakdown(resolveCostBreakdown(null, null));
+        setClinicalEvidence(resolveClinicalEvidence(null, null, null, null));
         setLoading(false);
       });
   }, []);
@@ -616,6 +757,38 @@ export default function App() {
                         <div className="checklist-title" style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#4338ca', fontWeight: 800 }}>Payer Guideline Criteria Validation Checklist</div>
                         <div className="checklist-row" style={{ fontSize: '12px', lineHeight: 1.6, color: '#0f172a' }}>• Requested service aligns with documented clinical intent ──► [ PASS ]</div>
                         <div className="checklist-row" style={{ fontSize: '12px', lineHeight: 1.6, color: '#0f172a' }}>• Prior authorization criteria and network constraints reviewed ──► [ PASS ]</div>
+                      </div>
+
+                      <div className="evidence-panel" style={{ background: '#ffffff', border: '1px solid rgba(226,232,240,0.95)', borderRadius: '14px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setEvidenceExpanded((prev) => !prev)}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                          aria-expanded={evidenceExpanded}
+                        >
+                          <span style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>
+                            Clinical Evidence Reviewed{clinicalEvidence ? ` (${clinicalEvidence.totalCount})` : ''}
+                          </span>
+                          <span style={{ fontSize: '12px', fontWeight: 800, color: '#4338ca' }}>{evidenceExpanded ? 'Hide ▲' : 'Show ▼'}</span>
+                        </button>
+
+                        {evidenceExpanded && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '4px' }}>
+                            <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
+                              These are the structured chart entries the AI checked before drafting the justification below — not a summary of a clinical note, since none is on file for this patient in this system. Verify against the chart before transmitting.
+                            </p>
+                            {clinicalEvidence ? (
+                              <>
+                                <EvidenceCategory categoryKey="conditions" items={clinicalEvidence.conditions} />
+                                <EvidenceCategory categoryKey="medications" items={clinicalEvidence.medications} />
+                                <EvidenceCategory categoryKey="procedures" items={clinicalEvidence.procedures} />
+                                <EvidenceCategory categoryKey="allergies" items={clinicalEvidence.allergies} />
+                              </>
+                            ) : (
+                              <div style={{ fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' }}>Loading chart evidence...</div>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div className="field-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
