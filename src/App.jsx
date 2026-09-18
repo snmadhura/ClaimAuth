@@ -692,27 +692,6 @@ export default function App() {
     setActivityLog([]);
   };
 
-  // There's no in-app way to switch patients while staying in this SMART
-  // session — the EHR grants that context at launch, not the app. The
-  // confirm dialog tells the person to make their new selection using the
-  // EHR/launcher's own controls; once they confirm, this clears the local
-  // session and does an actual browser tab refresh (not just an in-app
-  // state reset) so the app reloads clean against whatever they picked.
-  const handleRestartSession = () => {
-    const confirmed = window.confirm(
-      "This ends your current session. Before continuing, select a different patient using your EHR or the launcher's own controls — this tab will then refresh. Continue?"
-    );
-    if (!confirmed) return;
-
-    try {
-      sessionStorage.clear();
-    } catch (err) {
-      console.warn('Could not clear session storage before restarting', err);
-    }
-
-    window.location.reload();
-  };
-
   const handleAiPreFill = () => {
     setAiStatus('scanning');
     setTimeout(() => {
@@ -945,13 +924,6 @@ export default function App() {
                   {showDemoSecondary ? '✕ Remove demo secondary payer' : '🧪 This patient only has one coverage — add a demo secondary payer to test switching'}
                 </button>
               )}
-              <button
-                type="button"
-                onClick={handleRestartSession}
-                style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '5px', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: '#64748b' }}
-              >
-                🔄 Wrong patient? Switch patient / clinician
-              </button>
             </div>
 
             <div className="context-card" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(248,250,252,0.96))', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '18px', padding: '18px', boxShadow: '0 12px 26px rgba(148, 163, 184, 0.08)' }}>
