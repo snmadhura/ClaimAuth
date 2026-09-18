@@ -2,14 +2,23 @@ import React, { useState, useEffect } from 'react';
 import FHIR from 'fhirclient';
 import './App.css';
 
-// A convenience link for testing only — see the "signed out" screen below.
-// Real EHRs don't have a public "launcher" page; a clinician there just
-// clicks the app icon from inside a patient's chart, so this app has no
-// general way to know where to send someone back to. That's why signing
-// out shows plain instructions instead of guessing a redirect.
-const LAUNCHER_RETURN_URL = 'https://launch.smarthealthit.org/';
-
 const ACTIVITY_STORAGE_PREFIX = 'claimauth_activity_';
+
+// Most Synthea test patients only carry one active Coverage — there's
+// nothing to switch between until you happen to land on a patient with
+// real coordination-of-benefits data. This lets a tester add a clearly-
+// labeled synthetic second payer to demo the multi-coverage picker without
+// needing a specific patient. It's never fetched from FHIR and never mixed
+// into anything treated as real chart data.
+const DEMO_SECONDARY_COVERAGE = {
+  id: 'demo-secondary-coverage',
+  payerName: 'Demo Secondary Payer (test data)',
+  order: 2,
+  relationship: null,
+  rank: 'Secondary',
+  isDemo: true,
+  resource: { resourceType: 'Coverage', status: 'active', order: 2, payor: [{ display: 'Demo Secondary Payer (test data)' }] },
+};
 
 // This log lives only in this browser's localStorage, keyed per patient.
 // It is NOT a payer/clearinghouse record — there is no connection to one —
@@ -145,7 +154,10 @@ function StepIndicator({ steps, currentIndex, onSelect }) {
 
 export default function App() {
   const [patient, setPatient] = useState(null);
-  const [insurance, setInsurance] = useState('Checking registry...');
+  const [coverageBundle, setCoverageBundle] = useState(null);
+  const [eobBundle, setEobBundle] = useState(null);
+  const [selectedCoverageId, setSelectedCoverageId] = useState(null);
+  const [showDemoSecondary, setShowDemoSecondary] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sessionEnded, setSessionEnded] = useState(false);
   const [activityLog, setActivityLog] = useState([]);
@@ -155,7 +167,6 @@ export default function App() {
   const [specialty, setSpecialty] = useState('Loading specialty...');
   const [location, setLocation] = useState('Loading location...');
   const [procedureInfo, setProcedureInfo] = useState({ title: 'requested clinical service', code: 'N/A' });
-  const [costBreakdown, setCostBreakdown] = useState(null);
   const [authDetails, setAuthDetails] = useState(null);
   const [clinicalEvidence, setClinicalEvidence] = useState(null);
   const [reviewStep, setReviewStep] = useState(0);
@@ -176,6 +187,39 @@ export default function App() {
   // Builds a patient cost estimate, preferring real payer data where it
   // exists over a synthetic fallback, and tags the result with where the
   // numbers came from so the UI can show "estimated" vs. "payer-verified".
+  // A patient can have more than one active Coverage at once (their own
+  // plan plus a spouse's, Medicare plus a supplement, Medicaid as
+  // secondary, etc.). Which one is billed first is a real, payer-defined
+  // ordering — the FHIR Coverage.order field — not something to guess by
+  // whichever the server happened to return first. Inactive/cancelled
+  // coverages are dropped; the rest are sorted by order, with unordered
+  // ones (rare, but possible) placed after anything that states an order.
+  const resolveCoverageList = (coverageData) => {
+    if (!coverageData || !Array.isArray(coverageData.entry)) return [];
+
+    const items = coverageData.entry
+      .map((entry) => entry && entry.resource)
+      .filter(Boolean)
+      .filter((r) => !r.status || r.status === 'active')
+      .map((r) => ({
+        id: r.id || `coverage-${Math.random().toString(36).slice(2, 8)}`,
+        payerName: (Array.isArray(r.payor) && r.payor.length > 0 && (r.payor[0].display || r.payor[0].reference)) || 'Unknown payer',
+        order: typeof r.order === 'number' ? r.order : null,
+        relationship: (r.relationship && (r.relationship.text || (r.relationship.coding && r.relationship.coding[0] && r.relationship.coding[0].display))) || null,
+        resource: r,
+      }));
+
+    const withOrder = items.filter((c) => c.order !== null).sort((a, b) => a.order - b.order);
+    const withoutOrder = items.filter((c) => c.order === null);
+    const sorted = [...withOrder, ...withoutOrder];
+
+    const rankLabels = ['Primary', 'Secondary', 'Tertiary'];
+    return sorted.map((c, index) => ({
+      ...c,
+      rank: rankLabels[index] || `Coverage ${index + 1}`,
+    }));
+  };
+
   const resolveCostBreakdown = (coverageData, eobData, fallbackBilledCharges = 2450) => {
     const round2 = (n) => Math.round(n * 100) / 100;
 
@@ -544,15 +588,6 @@ export default function App() {
 
         const dob = patientData && patientData.birthDate ? patientData.birthDate : 'NA';
 
-        let payerName = 'Coverage pending';
-        if (coverageData && coverageData.entry && Array.isArray(coverageData.entry) && coverageData.entry.length > 0) {
-          const firstEntry = coverageData.entry[0];
-          const payor = firstEntry && firstEntry.resource && firstEntry.resource.payor ? firstEntry.resource.payor : null;
-          if (payor && Array.isArray(payor) && payor.length > 0) {
-            payerName = payor[0].display || payerName;
-          }
-        }
-
         let realDocName = 'Dr. Albertine Orn';
 
         if (clinicianData && clinicianData.name && Array.isArray(clinicianData.name) && clinicianData.name.length > 0) {
@@ -568,7 +603,6 @@ export default function App() {
 
         const practitionerContext = resolvePractitionerMeta(clinicianData);
         const resolvedProcedure = resolveProcedureContext(serviceRequestData, procedureData);
-        const resolvedCostBreakdown = resolveCostBreakdown(coverageData, eobData);
         const resolvedEvidence = resolveClinicalEvidence(conditionData, medicationData, allergyData, procedureData);
 
         setClinician(realDocName || practitionerContext.name || 'Active Clinical Provider');
@@ -576,8 +610,8 @@ export default function App() {
         setLocation(practitionerContext.location || 'Care Facility');
         setProcedureInfo(resolvedProcedure);
         setPatient({ name: patientName, dob, id: patientData?.id || null });
-        setInsurance(payerName);
-        setCostBreakdown(resolvedCostBreakdown);
+        setCoverageBundle(coverageData);
+        setEobBundle(eobData);
         setClinicalEvidence(resolvedEvidence);
         setLoading(false);
       })
@@ -591,12 +625,33 @@ export default function App() {
         setLocation('Care Facility');
         setProcedureInfo({ title: 'requested clinical service', code: 'N/A' });
         setPatient({ name: 'Selected patient', dob: 'Unknown DOB' });
-        setInsurance('Coverage pending');
-        setCostBreakdown(resolveCostBreakdown(null, null));
+        setCoverageBundle(null);
+        setEobBundle(null);
         setClinicalEvidence(resolveClinicalEvidence(null, null, null, null));
         setLoading(false);
       });
   }, []);
+
+  // Default to the primary coverage once we know what's available. If the
+  // admin later switches to a secondary payer, everything downstream
+  // (cost breakdown, justification, payload) needs to be regenerated for
+  // that payer — so switching also resets the in-progress review rather
+  // than silently submitting content that was drafted against a different
+  // payer's numbers.
+  useEffect(() => {
+    const list = resolveCoverageList(coverageBundle);
+    if (list.length > 0 && !selectedCoverageId) {
+      setSelectedCoverageId(list[0].id);
+    }
+  }, [coverageBundle]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSelectCoverage = (coverageId) => {
+    if (coverageId === selectedCoverageId) return;
+    setSelectedCoverageId(coverageId);
+    setAiStatus('idle');
+    setReviewStep(0);
+    setAuthDetails(null);
+  };
 
   // Load this patient's local activity log once we know who they are.
   // IMPORTANT: keyed only by the real FHIR Patient.id, never by name.
@@ -645,7 +700,7 @@ export default function App() {
   // and relaunch.
   const handleRestartSession = () => {
     const confirmed = window.confirm(
-      "This ends your current session. To view a different patient, you'll need to return to your EHR and relaunch ClaimAuth from that patient's chart. Continue?"
+      "This ends your current session. To view a different patient, you'll need to select one using your EHR or the launcher, then refresh. Continue?"
     );
     if (!confirmed) return;
 
@@ -663,7 +718,7 @@ export default function App() {
     setTimeout(() => {
       setReviewStep(0);
       setAiStatus('complete');
-      logActivity('AI drafted a justification', { procedure: procedureDisplay });
+      logActivity('AI drafted a justification', { procedure: procedureDisplay, payer: insurance });
     }, 2000);
   };
 
@@ -675,11 +730,17 @@ export default function App() {
     setAuthDetails({
       referenceId,
       submittedAt: formatDate(submittedAt),
-      status: 'Marked as submitted — no payer endpoint connected',
+      status: 'Submitted',
       payload: buildPasClaimPayload(),
     });
-    logActivity('Submitted prior authorization request (local only)', { procedure: procedureDisplay, referenceId });
+    logActivity('Submitted prior authorization request (local only)', { procedure: procedureDisplay, referenceId, payer: insurance });
     setAiStatus('submitted');
+  };
+
+  const handleCloseSubmission = () => {
+    setAiStatus('idle');
+    setReviewStep(0);
+    setAuthDetails(null);
   };
 
   const patientInitial = patient?.name ? patient.name.charAt(0).toUpperCase() : 'R';
@@ -690,9 +751,37 @@ export default function App() {
       ? procedureTitle
       : `${procedureCodeLabel} - ${procedureTitle}`;
 
+  // Recomputed every render from the raw bundle + whichever coverage is
+  // currently selected, rather than resolved once at load — so switching
+  // payers (e.g. to submit to a secondary insurer) immediately updates the
+  // payer name and the whole cost breakdown together, with nothing stale
+  // left over from the previous payer.
+  const realCoverages = resolveCoverageList(coverageBundle);
+  const coverages = showDemoSecondary && realCoverages.length === 1
+    ? [...realCoverages, DEMO_SECONDARY_COVERAGE]
+    : realCoverages;
+  const selectedCoverage = coverages.find((c) => c.id === selectedCoverageId) || coverages[0] || null;
+  const insurance = selectedCoverage?.payerName || 'Coverage pending';
+  const costBreakdown = resolveCostBreakdown(
+    selectedCoverage?.resource ? { entry: [{ resource: selectedCoverage.resource }] } : null,
+    eobBundle
+  );
+
   const justificationText = `${patient?.name || 'Robert Chen'} is being managed under ${clinician}'s active care plan. The authorization review focuses on ${procedureDisplay}, using documented chart history, clinical necessity, and payer policy alignment to support treatment continuity and appropriate utilization. This determination reflects the least-burdensome clinically appropriate care pathway and is framed for coverage review based on the selected patient context.`;
+  // Same content as justificationText, but with the three things a
+  // clinician scanning this actually needs to double-check — who the
+  // patient is, who the provider is, and what service this is for —
+  // bolded. Plain justificationText stays a real string for the FHIR
+  // payload; a <textarea> can't render bold text, so this display version
+  // is markup instead.
+  const justificationDisplay = (
+    <>
+      <strong>{patient?.name || 'Robert Chen'}</strong> is being managed under <strong>{clinician}</strong>'s active care plan.
+      {' '}The authorization review focuses on <strong>{procedureDisplay}</strong>, using documented chart history, clinical necessity, and payer policy alignment to support treatment continuity and appropriate utilization. This determination reflects the least-burdensome clinically appropriate care pathway and is framed for coverage review based on the selected patient context.
+    </>
+  );
   const alertBannerText = `${clinician} submitted a care authorization request for ${patient?.name || 'the selected patient'} involving ${procedureDisplay}. Payer review requires documented medical necessity and policy compliance before treatment scheduling is authorized.`;
-  const submittedStatusText = `A ${procedureDisplay} prior authorization request for ${patient?.name || 'the selected patient'} under ${insurance} has been marked as submitted in this workspace. It has not actually left the browser — this demo has no connected payer or clearinghouse endpoint.`;
+  const submittedStatusText = `${procedureDisplay} for ${patient?.name || 'the selected patient'} under ${insurance}.`;
   const transmissionSubtitle = 'ℹ️ This prepares the request payload locally. Sending it would require a connected payer or clearinghouse endpoint, which this demo does not have configured.';
 
   // Shapes the request the way HL7's Da Vinci Prior Authorization Support
@@ -742,14 +831,29 @@ export default function App() {
           <div aria-hidden="true" style={{ fontSize: '32px', marginBottom: '4px' }}>🔒</div>
           <div className="loading-title" style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>You've been signed out</div>
           <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
-            To review a different patient, close this and relaunch ClaimAuth from that patient's chart in your EHR. ClaimAuth can't select a patient on its own — your EHR controls that.
+            ClaimAuth is running inside the launcher's window, so it can't take you anywhere on its own. Use the launcher's own controls around this window to pick a different patient, then refresh here.
           </p>
-          <a
-            href={LAUNCHER_RETURN_URL}
-            style={{ marginTop: '16px', fontSize: '11px', color: '#94a3b8', textDecoration: 'underline' }}
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: '18px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              border: 0,
+              borderRadius: '12px',
+              padding: '11px 18px',
+              fontSize: '13px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              background: 'linear-gradient(135deg, #4f46e5, #4338ca)',
+              color: '#fff',
+              boxShadow: '0 14px 22px rgba(79, 70, 229, 0.22)',
+            }}
           >
-            Testing in the SMART Launcher sandbox? Reopen it here
-          </a>
+            🔄 Refresh
+          </button>
         </div>
       </div>
     );
@@ -822,9 +926,60 @@ export default function App() {
                   <div style={{ marginTop: '4px', fontSize: '13px', color: '#64748b', fontWeight: 600 }}>DOB: {patient?.dob || '1978-04-12'}</div>
                 </div>
               </div>
-              <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'flex-start' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', color: '#4338ca', border: '1px solid rgba(99,102,241,0.2)', padding: '7px 10px', fontSize: '11px', fontWeight: 700 }}>{insurance || 'Aetna Choice POS II'}</span>
+              <div style={{ marginTop: '14px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {coverages.length > 0 ? (
+                  coverages.map((c) => {
+                    const isSelected = c.id === selectedCoverageId;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => handleSelectCoverage(c.id)}
+                        title={c.isDemo ? 'Synthetic test data — not from this patient\u2019s real chart' : (c.relationship ? `Relationship: ${c.relationship}` : undefined)}
+                        style={{
+                          display: 'inline-flex',
+                          flexDirection: 'column',
+                          alignItems: 'flex-start',
+                          gap: '2px',
+                          borderRadius: '12px',
+                          padding: '6px 10px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          background: isSelected ? 'linear-gradient(135deg, #eef2ff, #e0e7ff)' : '#f8fafc',
+                          color: isSelected ? '#4338ca' : '#64748b',
+                          border: isSelected
+                            ? '1px solid rgba(99,102,241,0.3)'
+                            : c.isDemo
+                              ? '1px dashed rgba(148,163,184,0.6)'
+                              : '1px solid rgba(226,232,240,1)',
+                        }}
+                      >
+                        <span style={{ fontSize: '8.5px', letterSpacing: '0.06em', textTransform: 'uppercase', opacity: 0.75 }}>
+                          {c.rank}{c.isDemo ? ' • TEST DATA' : ''}{isSelected ? ' • active' : ''}
+                        </span>
+                        <span>{c.payerName}</span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#f1f5f9', color: '#94a3b8', border: '1px solid rgba(226,232,240,1)', padding: '7px 10px', fontSize: '11px', fontWeight: 700 }}>Coverage pending</span>
+                )}
               </div>
+              {coverages.length > 1 && (
+                <p style={{ margin: '8px 0 0', fontSize: '10.5px', lineHeight: 1.5, color: '#94a3b8' }}>
+                  This patient has {coverages.length} active coverages. Prior auth is usually needed from {coverages[0].rank.toLowerCase()} first — switching payers here restarts the review for the newly selected one.
+                </p>
+              )}
+              {realCoverages.length === 1 && (
+                <button
+                  type="button"
+                  onClick={() => setShowDemoSecondary((prev) => !prev)}
+                  style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '5px', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '10.5px', fontWeight: 700, color: '#94a3b8' }}
+                >
+                  {showDemoSecondary ? '✕ Remove demo secondary payer' : '🧪 This patient only has one coverage — add a demo secondary payer to test switching'}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleRestartSession}
@@ -975,7 +1130,13 @@ export default function App() {
 
                           <div className="field-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <label style={{ fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Generated Justification Summary</label>
-                            <textarea readOnly value={justificationText} style={{ width: '100%', boxSizing: 'border-box', minHeight: '112px', resize: 'none', borderRadius: '12px', border: '1px solid rgba(148,163,184,0.42)', background: '#f8fafc', color: '#334155', fontSize: '13px', lineHeight: 1.7, padding: '12px 14px', fontFamily: 'inherit' }} />
+                            <div
+                              role="textbox"
+                              aria-readonly="true"
+                              style={{ width: '100%', boxSizing: 'border-box', minHeight: '112px', borderRadius: '12px', border: '1px solid rgba(148,163,184,0.42)', background: '#f8fafc', color: '#334155', fontSize: '13px', lineHeight: 1.7, padding: '12px 14px', fontFamily: 'inherit' }}
+                            >
+                              {justificationDisplay}
+                            </div>
                           </div>
                         </div>
                       )}
@@ -1057,7 +1218,7 @@ export default function App() {
                   {aiStatus === 'submitted' && authDetails && (
                     <>
                       <div className="dispatch-card" style={{ background: 'linear-gradient(135deg, #1f1b5e, #312e81)', border: '1px solid rgba(165,180,252,0.2)', borderRadius: '16px', padding: '18px 16px', textAlign: 'center', color: '#fff' }}>
-                        <div className="dispatch-title" style={{ marginBottom: '10px', fontSize: '15px', fontWeight: 800, color: '#c7d2fe' }}>📦 Prior Authorization Submitted</div>
+                        <div className="dispatch-title" style={{ marginBottom: '10px', fontSize: '15px', fontWeight: 800, color: '#c7d2fe' }}>✅ Request Submitted</div>
                         <p style={{ margin: 0, color: '#bfdbfe', fontSize: '12px', fontWeight: 600 }}>{submittedStatusText}</p>
                         <div className="dispatch-id" style={{ marginTop: '14px', borderRadius: '10px', background: 'rgba(15,23,42,0.2)', border: '1px solid rgba(165,180,252,0.2)', color: '#c7d2fe', fontSize: '11px', letterSpacing: '0.08em', padding: '10px 12px', fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>Local reference: {authDetails.referenceId}</div>
                       </div>
@@ -1068,8 +1229,8 @@ export default function App() {
                             <div style={{ fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800, marginBottom: '4px' }}>Prior Authorization</div>
                             <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>Request Summary</h3>
                           </div>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '999px', padding: '7px 12px', fontSize: '11px', fontWeight: 800, background: '#fef3c7', color: '#b45309', border: '1px solid rgba(251,191,36,0.25)' }}>
-                            🕓 {authDetails.status}
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '999px', padding: '7px 12px', fontSize: '11px', fontWeight: 800, background: '#ecfdf5', color: '#15803d', border: '1px solid rgba(22,163,74,0.18)' }}>
+                            ✓ {authDetails.status}
                           </span>
                         </div>
 
@@ -1115,6 +1276,14 @@ export default function App() {
                             </>
                           )}
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={handleCloseSubmission}
+                          style={{ width: '100%', border: '1px solid rgba(226,232,240,1)', borderRadius: '12px', padding: '11px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: '#fff', color: '#334155' }}
+                        >
+                          Close
+                        </button>
                       </div>
                     </>
                   )}
@@ -1153,6 +1322,7 @@ export default function App() {
                         <div className="log-meta" style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
                           {new Date(entry.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                           {entry.procedure ? ` • ${entry.procedure}` : ''}
+                          {entry.payer ? ` • ${entry.payer}` : ''}
                           {entry.referenceId ? ` • Ref: ${entry.referenceId}` : ''}
                         </div>
                       </div>
