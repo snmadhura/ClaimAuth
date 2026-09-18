@@ -2,14 +2,41 @@ import React, { useState, useEffect } from 'react';
 import FHIR from 'fhirclient';
 import './App.css';
 
-// A convenience link for testing only — see the "signed out" screen below.
-// Real EHRs don't have a public "launcher" page; a clinician there just
-// clicks the app icon from inside a patient's chart, so this app has no
-// general way to know where to send someone back to. That's why signing
-// out shows plain instructions instead of guessing a redirect.
-const LAUNCHER_RETURN_URL = 'https://launch.smarthealthit.org/';
+// This is the SMART Launcher's EHR-launch simulation entry point for this
+// app — pre-configured with this app's URL, the FHIR server, and a pool of
+// candidate patients/practitioners. Visiting it re-runs the launcher's own
+// patient/practitioner picker screens and then redirects back into
+// ClaimAuth with a fresh launch — it is NOT the same as the bare
+// https://launch.smarthealthit.org/ homepage, which is a full settings/
+// config screen and is confusing to land a clinician on.
+//
+// This link is tied to this specific SMART Launcher scenario (this app's
+// URL, FHIR version, and candidate patient/practitioner pool). If that
+// scenario is ever reconfigured in the launcher, copy the new link from
+// there and swap it in here. In a real hospital deployment there is no
+// launcher at all — a clinician just clicks the app icon from inside a
+// patient's chart in the EHR — so this entire mechanism is specific to
+// testing in this sandbox.
+const LAUNCHER_RETURN_URL =
+  'https://launch.smarthealthit.org/ehr?app=https%3A%2F%2Fclaim-auth.vercel.app%2F%3Fiss%3Dhttps%253A%252F%252Flaunch.smarthealthit.org%252Fv%252Fr4%252Ffhir&launch=WzAsImIwZDI4MDg0LWZjYWQtNGFmMi05YTNkLWMwMDkwYTZlMjk0YSw5YWZlMjhkYy03YWQ1LTRlOTAtYjZhNi0xNjEyM2VhZTk4YzMsY2E5NWIyYzUtZDMwNi00NGQ0LWE3ZmEtNzU2ZGU3MzZlNjhlLGE3NDY1MWE2LTgxNDEtNGM3ZS05MWI1LWE0M2NlODBlNmI5MixhZThhODk2ZS1iYmQ5LTRlMWEtYTczMi0xNTY4ZGY5ZDc1MjcsMTU2NjExMTItNzk2Yy00NjBjLWJmN2EtNmIyOTdlMzNmMTEzLGQzNGU5ZTJkLWE4MWEtNDA3ZC05NTI3LTgyZDFmZGIwNjQyMSw5MTExMDNhMy0wNjU3LTQ5NWMtYjE3MC1iMmVlNjA3OGI1YzgsZjlmZWMzOGItM2M1Mi00NWRlLWJmNDgtNTNkNWE5OTNjZTk4LGY4MTNmM2ExLTJmNGUtNGU0Yy1hMGVlLTNkNWRjNTI4NmFlOCxhZTYyMjVlYy1jNGMwLTQwMGYtYmJjZC00YWJhMTgxYmU4NjkiLCI1MjkxOTA5OS02YTdhLTQ0MmMtYjBkNS0yYjAyYzBkZDRiNzQsODlhZjUwZGItZjg1Yy00OTdmLWFhMWYtZjFjNWNlYTcwYmM3LGY0YmY1MjY1LThkOGUtNDA1NS1hNGU1LWIzNDg1M2YxMDk5Ziw2MzAwM2FiYi0zOTI0LTQ2ZGYtYTc1YS0wYTFmNDI3MzMxODksYTZkZmU4ZTUtZjY1ZS00ZWRhLWE1NzItODUwZjdhYzBkN2NmLGZkN2E3MzdlLTFhYzUtNGM0ZS04OWNkLTFjMDdkYTRjYTFjMixlNDQzYWM1OC04ZWNlLTQzODUtOGQ1NS03NzVjMWI4ZjNhMzcsOWIyNTY0ZmQtMWU0Ny00MjBhLWJkZWQtMzg3MjM0MDcwZWYzLDdjZGNlZTU2LWEwYzAtNDE5Yy05OGZkLWE3Y2NjOTgxZjY1MCxjMDIwNjRiZS0xMDc1LTQwMjctYTdlYi0wMjdjNDc2ZWYzZTQsMDNkZmFhMmYtYTU0Yi00YWNmLWJkNTQtODBkZWZlZjZlZDUxLDM2YTZlMTViLTczNDUtNDJhZS04YTU5LTdhMzUwNTllYmI0Nyw5ODI4NjE3ZS00OTZlLTQwM2UtYjk5Zi0zZDM2NDZkNGUwM2IsYjExOWUwYTktNmIxMS00MmMzLThhMzctMjRjNjhmOGVhYTc4IiwiQVVUTyIsMCwwLDEsIiIsIiIsIiIsIiIsIiIsIiIsIiIsMCwxLCIiXQ';
 
 const ACTIVITY_STORAGE_PREFIX = 'claimauth_activity_';
+
+// Most Synthea test patients only carry one active Coverage — there's
+// nothing to switch between until you happen to land on a patient with
+// real coordination-of-benefits data. This lets a tester add a clearly-
+// labeled synthetic second payer to demo the multi-coverage picker without
+// needing a specific patient. It's never fetched from FHIR and never mixed
+// into anything treated as real chart data.
+const DEMO_SECONDARY_COVERAGE = {
+  id: 'demo-secondary-coverage',
+  payerName: 'Demo Secondary Payer (test data)',
+  order: 2,
+  relationship: null,
+  rank: 'Secondary',
+  isDemo: true,
+  resource: { resourceType: 'Coverage', status: 'active', order: 2, payor: [{ display: 'Demo Secondary Payer (test data)' }] },
+};
 
 // This log lives only in this browser's localStorage, keyed per patient.
 // It is NOT a payer/clearinghouse record — there is no connection to one —
@@ -148,6 +175,7 @@ export default function App() {
   const [coverageBundle, setCoverageBundle] = useState(null);
   const [eobBundle, setEobBundle] = useState(null);
   const [selectedCoverageId, setSelectedCoverageId] = useState(null);
+  const [showDemoSecondary, setShowDemoSecondary] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sessionEnded, setSessionEnded] = useState(false);
   const [activityLog, setActivityLog] = useState([]);
@@ -727,6 +755,12 @@ export default function App() {
     setAiStatus('submitted');
   };
 
+  const handleCloseSubmission = () => {
+    setAiStatus('idle');
+    setReviewStep(0);
+    setAuthDetails(null);
+  };
+
   const patientInitial = patient?.name ? patient.name.charAt(0).toUpperCase() : 'R';
   const procedureTitle = procedureInfo.title || 'requested clinical service';
   const procedureCodeLabel = procedureInfo.code && procedureInfo.code !== 'N/A' ? `CPT ${procedureInfo.code}` : 'requested clinical service';
@@ -740,7 +774,10 @@ export default function App() {
   // payers (e.g. to submit to a secondary insurer) immediately updates the
   // payer name and the whole cost breakdown together, with nothing stale
   // left over from the previous payer.
-  const coverages = resolveCoverageList(coverageBundle);
+  const realCoverages = resolveCoverageList(coverageBundle);
+  const coverages = showDemoSecondary && realCoverages.length === 1
+    ? [...realCoverages, DEMO_SECONDARY_COVERAGE]
+    : realCoverages;
   const selectedCoverage = coverages.find((c) => c.id === selectedCoverageId) || coverages[0] || null;
   const insurance = selectedCoverage?.payerName || 'Coverage pending';
   const costBreakdown = resolveCostBreakdown(
@@ -749,6 +786,18 @@ export default function App() {
   );
 
   const justificationText = `${patient?.name || 'Robert Chen'} is being managed under ${clinician}'s active care plan. The authorization review focuses on ${procedureDisplay}, using documented chart history, clinical necessity, and payer policy alignment to support treatment continuity and appropriate utilization. This determination reflects the least-burdensome clinically appropriate care pathway and is framed for coverage review based on the selected patient context.`;
+  // Same content as justificationText, but with the three things a
+  // clinician scanning this actually needs to double-check — who the
+  // patient is, who the provider is, and what service this is for —
+  // bolded. Plain justificationText stays a real string for the FHIR
+  // payload; a <textarea> can't render bold text, so this display version
+  // is markup instead.
+  const justificationDisplay = (
+    <>
+      <strong>{patient?.name || 'Robert Chen'}</strong> is being managed under <strong>{clinician}</strong>'s active care plan.
+      {' '}The authorization review focuses on <strong>{procedureDisplay}</strong>, using documented chart history, clinical necessity, and payer policy alignment to support treatment continuity and appropriate utilization. This determination reflects the least-burdensome clinically appropriate care pathway and is framed for coverage review based on the selected patient context.
+    </>
+  );
   const alertBannerText = `${clinician} submitted a care authorization request for ${patient?.name || 'the selected patient'} involving ${procedureDisplay}. Payer review requires documented medical necessity and policy compliance before treatment scheduling is authorized.`;
   const submittedStatusText = `${procedureDisplay} for ${patient?.name || 'the selected patient'} under ${insurance}.`;
   const transmissionSubtitle = 'ℹ️ This prepares the request payload locally. Sending it would require a connected payer or clearinghouse endpoint, which this demo does not have configured.';
@@ -800,13 +849,28 @@ export default function App() {
           <div aria-hidden="true" style={{ fontSize: '32px', marginBottom: '4px' }}>🔒</div>
           <div className="loading-title" style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>You've been signed out</div>
           <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
-            To review a different patient, close this and relaunch ClaimAuth from that patient's chart in your EHR. ClaimAuth can't select a patient on its own — your EHR controls that.
+            To review a different patient, select one below and relaunch ClaimAuth. In a real hospital deployment, you'd instead click the app icon from inside that patient's chart in your EHR — ClaimAuth can't select a patient on its own.
           </p>
           <a
             href={LAUNCHER_RETURN_URL}
-            style={{ marginTop: '16px', fontSize: '11px', color: '#94a3b8', textDecoration: 'underline' }}
+            style={{
+              marginTop: '18px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              border: 0,
+              borderRadius: '12px',
+              padding: '11px 18px',
+              fontSize: '13px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              background: 'linear-gradient(135deg, #4f46e5, #4338ca)',
+              color: '#fff',
+              boxShadow: '0 14px 22px rgba(79, 70, 229, 0.22)',
+              textDecoration: 'none',
+            }}
           >
-            Testing in the SMART Launcher sandbox? Reopen it here
+            🔄 Select a different patient
           </a>
         </div>
       </div>
@@ -889,7 +953,7 @@ export default function App() {
                         key={c.id}
                         type="button"
                         onClick={() => handleSelectCoverage(c.id)}
-                        title={c.relationship ? `Relationship: ${c.relationship}` : undefined}
+                        title={c.isDemo ? 'Synthetic test data — not from this patient\u2019s real chart' : (c.relationship ? `Relationship: ${c.relationship}` : undefined)}
                         style={{
                           display: 'inline-flex',
                           flexDirection: 'column',
@@ -902,10 +966,16 @@ export default function App() {
                           cursor: 'pointer',
                           background: isSelected ? 'linear-gradient(135deg, #eef2ff, #e0e7ff)' : '#f8fafc',
                           color: isSelected ? '#4338ca' : '#64748b',
-                          border: isSelected ? '1px solid rgba(99,102,241,0.3)' : '1px solid rgba(226,232,240,1)',
+                          border: isSelected
+                            ? '1px solid rgba(99,102,241,0.3)'
+                            : c.isDemo
+                              ? '1px dashed rgba(148,163,184,0.6)'
+                              : '1px solid rgba(226,232,240,1)',
                         }}
                       >
-                        <span style={{ fontSize: '8.5px', letterSpacing: '0.06em', textTransform: 'uppercase', opacity: 0.75 }}>{c.rank}{isSelected ? ' • active' : ''}</span>
+                        <span style={{ fontSize: '8.5px', letterSpacing: '0.06em', textTransform: 'uppercase', opacity: 0.75 }}>
+                          {c.rank}{c.isDemo ? ' • TEST DATA' : ''}{isSelected ? ' • active' : ''}
+                        </span>
                         <span>{c.payerName}</span>
                       </button>
                     );
@@ -918,6 +988,15 @@ export default function App() {
                 <p style={{ margin: '8px 0 0', fontSize: '10.5px', lineHeight: 1.5, color: '#94a3b8' }}>
                   This patient has {coverages.length} active coverages. Prior auth is usually needed from {coverages[0].rank.toLowerCase()} first — switching payers here restarts the review for the newly selected one.
                 </p>
+              )}
+              {realCoverages.length === 1 && (
+                <button
+                  type="button"
+                  onClick={() => setShowDemoSecondary((prev) => !prev)}
+                  style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '5px', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '10.5px', fontWeight: 700, color: '#94a3b8' }}
+                >
+                  {showDemoSecondary ? '✕ Remove demo secondary payer' : '🧪 This patient only has one coverage — add a demo secondary payer to test switching'}
+                </button>
               )}
               <button
                 type="button"
@@ -1069,7 +1148,13 @@ export default function App() {
 
                           <div className="field-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <label style={{ fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Generated Justification Summary</label>
-                            <textarea readOnly value={justificationText} style={{ width: '100%', boxSizing: 'border-box', minHeight: '112px', resize: 'none', borderRadius: '12px', border: '1px solid rgba(148,163,184,0.42)', background: '#f8fafc', color: '#334155', fontSize: '13px', lineHeight: 1.7, padding: '12px 14px', fontFamily: 'inherit' }} />
+                            <div
+                              role="textbox"
+                              aria-readonly="true"
+                              style={{ width: '100%', boxSizing: 'border-box', minHeight: '112px', borderRadius: '12px', border: '1px solid rgba(148,163,184,0.42)', background: '#f8fafc', color: '#334155', fontSize: '13px', lineHeight: 1.7, padding: '12px 14px', fontFamily: 'inherit' }}
+                            >
+                              {justificationDisplay}
+                            </div>
                           </div>
                         </div>
                       )}
@@ -1209,6 +1294,14 @@ export default function App() {
                             </>
                           )}
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={handleCloseSubmission}
+                          style={{ width: '100%', border: '1px solid rgba(226,232,240,1)', borderRadius: '12px', padding: '11px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: '#fff', color: '#334155' }}
+                        >
+                          Close
+                        </button>
                       </div>
                     </>
                   )}
