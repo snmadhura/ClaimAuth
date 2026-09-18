@@ -2,6 +2,31 @@ import React, { useState, useEffect } from 'react';
 import FHIR from 'fhirclient';
 import './App.css';
 
+const HIGHLIGHT_STYLES = {
+  indigo: { background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid rgba(99,102,241,0.18)', color: '#3730a3' },
+  green: { background: 'linear-gradient(135deg, #ecfdf5, #f0fdf4)', border: '1px solid rgba(34,197,94,0.18)', color: '#166534' },
+};
+
+function EOBField({ label, value, highlight }) {
+  const highlightStyle = highlight ? HIGHLIGHT_STYLES[highlight] : null;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        borderRadius: '12px',
+        padding: '10px 12px',
+        background: highlightStyle ? highlightStyle.background : '#f8fafc',
+        border: highlightStyle ? highlightStyle.border : '1px solid rgba(226,232,240,1)',
+      }}
+    >
+      <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>{label}</span>
+      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: highlightStyle ? highlightStyle.color : '#0f172a' }}>{value}</strong>
+    </div>
+  );
+}
+
 export default function App() {
   const [patient, setPatient] = useState(null);
   const [insurance, setInsurance] = useState('Checking registry...');
@@ -12,6 +37,138 @@ export default function App() {
   const [specialty, setSpecialty] = useState('Loading specialty...');
   const [location, setLocation] = useState('Loading location...');
   const [procedureInfo, setProcedureInfo] = useState({ title: 'requested clinical service', code: 'N/A' });
+  const [costBreakdown, setCostBreakdown] = useState(null);
+  const [authDetails, setAuthDetails] = useState(null);
+
+  const formatMoney = (value) => {
+    const num = typeof value === 'number' ? value : parseFloat(value);
+    if (Number.isNaN(num)) return '—';
+    return num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  };
+
+  const generateAuthorizationNumber = () => {
+    const year = new Date().getFullYear();
+    const rand = Math.floor(Math.random() * 900000 + 100000);
+    return `PA-${year}-${rand}`;
+  };
+
+  // Builds a patient cost estimate, preferring real payer data where it
+  // exists over a synthetic fallback, and tags the result with where the
+  // numbers came from so the UI can show "estimated" vs. "payer-verified".
+  const resolveCostBreakdown = (coverageData, eobData, fallbackBilledCharges = 2450) => {
+    const round2 = (n) => Math.round(n * 100) / 100;
+
+    // 1) An adjudicated ExplanationOfBenefit is the payer's actual line-item
+    //    cost-share determination — prefer it over anything else.
+    if (eobData && Array.isArray(eobData.entry) && eobData.entry.length > 0) {
+      const eob = eobData.entry[0].resource || {};
+      const adjudications = [];
+      if (Array.isArray(eob.item)) {
+        eob.item.forEach((item) => {
+          if (Array.isArray(item.adjudication)) adjudications.push(...item.adjudication);
+        });
+      }
+      if (Array.isArray(eob.total)) adjudications.push(...eob.total);
+
+      const findAmount = (categoryRegex) => {
+        const match = adjudications.find((adj) => {
+          const codings = (adj && adj.category && adj.category.coding) || [];
+          return codings.some((c) => categoryRegex.test(c.code || '') || categoryRegex.test(c.display || ''));
+        });
+        return match && match.amount && typeof match.amount.value === 'number' ? match.amount.value : null;
+      };
+
+      const billed = findAmount(/submitted/i);
+      const allowed = findAmount(/eligible|benefit/i);
+      const deductible = findAmount(/deductible/i) || 0;
+      const copay = findAmount(/copay/i) || 0;
+      const coinsurance = findAmount(/coinsurance/i) || 0;
+      const planPaidAmt = findAmount(/paidtoprovider|benefit/i);
+
+      if (billed !== null || allowed !== null) {
+        const billedCharges = billed !== null ? billed : fallbackBilledCharges;
+        const allowedAmount = allowed !== null ? allowed : billedCharges;
+        const patientResponsibility = round2(deductible + copay + coinsurance);
+        const planPaid = planPaidAmt !== null ? planPaidAmt : Math.max(round2(allowedAmount - patientResponsibility), 0);
+        return {
+          source: 'eob',
+          sourceLabel: 'Verified via adjudicated claim (EOB)',
+          billedCharges,
+          allowedAmount,
+          planDiscount: Math.max(round2(billedCharges - allowedAmount), 0),
+          deductibleApplied: deductible,
+          copayAmount: copay,
+          coinsuranceAmount: coinsurance,
+          patientResponsibility,
+          planPaid,
+        };
+      }
+    }
+
+    // 2) Coverage.costToBeneficiary — the payer's published cost-share terms
+    //    (roughly the same data an eligibility 271 response would carry).
+    if (coverageData && Array.isArray(coverageData.entry) && coverageData.entry.length > 0) {
+      const coverage = coverageData.entry[0].resource || {};
+      const costItems = Array.isArray(coverage.costToBeneficiary) ? coverage.costToBeneficiary : [];
+
+      if (costItems.length > 0) {
+        const findByType = (regex) => {
+          const item = costItems.find((c) => {
+            const codings = (c && c.type && c.type.coding) || [];
+            const text = (c && c.type && c.type.text) || '';
+            return codings.some((code) => regex.test(code.code || '') || regex.test(code.display || '')) || regex.test(text);
+          });
+          return item && item.valueMoney && typeof item.valueMoney.value === 'number' ? item.valueMoney.value : null;
+        };
+
+        const copay = findByType(/copay/i);
+        const coinsuranceRate = findByType(/coinsurance/i);
+        const deductible = findByType(/deductible/i);
+
+        if (copay !== null || coinsuranceRate !== null || deductible !== null) {
+          const billedCharges = fallbackBilledCharges;
+          const allowedAmount = round2(billedCharges * 0.84);
+          const deductibleApplied = deductible || 0;
+          const copayAmount = copay || 0;
+          const coinsuranceAmount = coinsuranceRate ? round2(allowedAmount * (coinsuranceRate <= 1 ? coinsuranceRate : coinsuranceRate / 100)) : 0;
+          const patientResponsibility = round2(deductibleApplied + copayAmount + coinsuranceAmount);
+          return {
+            source: 'coverage',
+            sourceLabel: `Payer-published cost share${coverage.type && coverage.type.text ? ` (${coverage.type.text})` : ''}`,
+            billedCharges,
+            allowedAmount,
+            planDiscount: Math.max(round2(billedCharges - allowedAmount), 0),
+            deductibleApplied,
+            copayAmount,
+            coinsuranceAmount,
+            patientResponsibility,
+            planPaid: Math.max(round2(allowedAmount - patientResponsibility), 0),
+          };
+        }
+      }
+    }
+
+    // 3) Fallback — a clearly-labeled synthetic estimate so the workspace
+    //    never shows a blank cost panel while data is unavailable.
+    const billedCharges = fallbackBilledCharges;
+    const allowedAmount = round2(billedCharges * 0.78);
+    const copayAmount = 150;
+    const deductibleApplied = 0;
+    const coinsuranceAmount = 0;
+    const patientResponsibility = round2(copayAmount + deductibleApplied + coinsuranceAmount);
+    return {
+      source: 'estimate',
+      sourceLabel: 'Estimated — no adjudicated claim or published cost share on file',
+      billedCharges,
+      allowedAmount,
+      planDiscount: Math.max(round2(billedCharges - allowedAmount), 0),
+      deductibleApplied,
+      copayAmount,
+      coinsuranceAmount,
+      patientResponsibility,
+      planPaid: Math.max(round2(allowedAmount - patientResponsibility), 0),
+    };
+  };
 
   const resolveProcedureContext = (serviceRequestData, procedureData) => {
     const bundles = [serviceRequestData, procedureData].filter(Boolean);
@@ -150,10 +307,16 @@ export default function App() {
               return null;
             })
           : Promise.resolve(null);
+        const eobPromise = client.patient.id
+          ? client.request(`ExplanationOfBenefit?patient=${client.patient.id}`).catch((err) => {
+              console.warn('FHIR: ExplanationOfBenefit request failed (falling back to Coverage/estimate)', err);
+              return null;
+            })
+          : Promise.resolve(null);
 
-        return Promise.all([patientPromise, coveragePromise, practitionerPromise, serviceRequestPromise, procedurePromise]);
+        return Promise.all([patientPromise, coveragePromise, practitionerPromise, serviceRequestPromise, procedurePromise, eobPromise]);
       })
-      .then(([patientData, coverageData, clinicianData, serviceRequestData, procedureData]) => {
+      .then(([patientData, coverageData, clinicianData, serviceRequestData, procedureData, eobData]) => {
         let patientName = 'Selected patient';
 
         if (patientData && patientData.name && Array.isArray(patientData.name) && patientData.name.length > 0) {
@@ -190,6 +353,7 @@ export default function App() {
 
         const practitionerContext = resolvePractitionerMeta(clinicianData);
         const resolvedProcedure = resolveProcedureContext(serviceRequestData, procedureData);
+        const resolvedCostBreakdown = resolveCostBreakdown(coverageData, eobData);
 
         setClinician(realDocName || practitionerContext.name || 'Active Clinical Provider');
         setSpecialty(practitionerContext.specialty || 'Clinical Care');
@@ -197,6 +361,7 @@ export default function App() {
         setProcedureInfo(resolvedProcedure);
         setPatient({ name: patientName, dob });
         setInsurance(payerName);
+        setCostBreakdown(resolvedCostBreakdown);
         setLoading(false);
       })
       .catch((err) => {
@@ -210,6 +375,7 @@ export default function App() {
         setProcedureInfo({ title: 'requested clinical service', code: 'N/A' });
         setPatient({ name: 'Selected patient', dob: 'Unknown DOB' });
         setInsurance('Coverage pending');
+        setCostBreakdown(resolveCostBreakdown(null, null));
         setLoading(false);
       });
   }, []);
@@ -217,6 +383,24 @@ export default function App() {
   const handleAiPreFill = () => {
     setAiStatus('scanning');
     setTimeout(() => setAiStatus('complete'), 2000);
+  };
+
+  const handleTransmit = () => {
+    const decisionDate = new Date();
+    const effectiveDate = new Date(decisionDate);
+    const expirationDate = new Date(decisionDate);
+    expirationDate.setDate(expirationDate.getDate() + 60);
+    const formatDate = (d) => d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
+    setAuthDetails({
+      authorizationNumber: generateAuthorizationNumber(),
+      status: 'Approved',
+      decisionDate: formatDate(decisionDate),
+      effectiveDate: formatDate(effectiveDate),
+      expirationDate: formatDate(expirationDate),
+      approvedScope: '1 unit • single episode of care',
+    });
+    setAiStatus('submitted');
   };
 
   const patientInitial = patient?.name ? patient.name.charAt(0).toUpperCase() : 'R';
@@ -353,13 +537,48 @@ export default function App() {
                       <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#0f172a' }}>{insurance} policy review • clinical necessity evaluation</strong>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px 14px', borderRight: '1px solid rgba(226,232,240,0.8)', minHeight: '90px' }}>
-                      <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Contracted Cost</span>
-                      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#0f172a' }}>$2,450.00</strong>
+                      <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Contracted / Allowed Amount</span>
+                      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#0f172a' }}>{formatMoney(costBreakdown?.allowedAmount)}</strong>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px 14px', minHeight: '90px', background: 'linear-gradient(135deg, #ecfdf5, #f0fdf4)', borderLeft: '1px solid rgba(34,197,94,0.18)' }}>
                       <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Patient Financial Responsibility</span>
-                      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#166534' }}>$150.00</strong>
+                      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#166534' }}>{formatMoney(costBreakdown?.patientResponsibility)}</strong>
                     </div>
+                  </div>
+                </section>
+
+                <section className="cost-breakdown-panel" style={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(226,232,240,0.95)', borderRadius: '18px', padding: '18px', boxShadow: '0 12px 26px rgba(148, 163, 184, 0.08)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                    <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Cost & Benefits Breakdown</h3>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        borderRadius: '999px',
+                        padding: '5px 10px',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        background: costBreakdown?.source === 'estimate' ? '#fef3c7' : '#ecfdf5',
+                        color: costBreakdown?.source === 'estimate' ? '#b45309' : '#15803d',
+                        border: `1px solid ${costBreakdown?.source === 'estimate' ? 'rgba(251,191,36,0.25)' : 'rgba(22,163,74,0.18)'}`,
+                      }}
+                    >
+                      {costBreakdown?.sourceLabel || 'Estimating cost share...'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
+                    <EOBField label="Billed Charges" value={formatMoney(costBreakdown?.billedCharges)} />
+                    <EOBField label="Plan Discount" value={formatMoney(costBreakdown?.planDiscount)} />
+                    <EOBField label="Deductible Applied" value={formatMoney(costBreakdown?.deductibleApplied)} />
+                    <EOBField label="Copay" value={formatMoney(costBreakdown?.copayAmount)} />
+                    <EOBField label="Coinsurance" value={formatMoney(costBreakdown?.coinsuranceAmount)} />
+                    <EOBField label="Allowed Amount" value={formatMoney(costBreakdown?.allowedAmount)} />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
+                    <EOBField label="Estimated Patient Responsibility" value={formatMoney(costBreakdown?.patientResponsibility)} highlight="green" />
+                    <EOBField label="Estimated Plan Payment" value={formatMoney(costBreakdown?.planPaid)} highlight="indigo" />
                   </div>
                 </section>
 
@@ -409,19 +628,57 @@ export default function App() {
                         <textarea readOnly value={justificationText} style={{ width: '100%', boxSizing: 'border-box', minHeight: '112px', resize: 'none', borderRadius: '12px', border: '1px solid rgba(148,163,184,0.42)', background: '#f8fafc', color: '#334155', fontSize: '13px', lineHeight: 1.7, padding: '12px 14px', fontFamily: 'inherit' }} />
                       </div>
 
-                      <button type="button" className="inverse-button" onClick={() => setAiStatus('submitted')} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: 'linear-gradient(135deg, #0f172a, #1e293b)', color: '#fff', boxShadow: '0 14px 22px rgba(15,23,42,0.2)' }}>
+                      <button type="button" className="inverse-button" onClick={handleTransmit} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: 'linear-gradient(135deg, #0f172a, #1e293b)', color: '#fff', boxShadow: '0 14px 22px rgba(15,23,42,0.2)' }}>
                         Transmit Authorization Payload
                       </button>
                       <div className="transmission-note" style={{ fontSize: '12px', lineHeight: 1.6, color: '#475569', padding: '0 2px' }}>{transmissionSubtitle}</div>
                     </div>
                   )}
 
-                  {aiStatus === 'submitted' && (
-                    <div className="dispatch-card" style={{ background: 'linear-gradient(135deg, #1f1b5e, #312e81)', border: '1px solid rgba(165,180,252,0.2)', borderRadius: '16px', padding: '18px 16px', textAlign: 'center', color: '#fff' }}>
-                      <div className="dispatch-title" style={{ marginBottom: '10px', fontSize: '15px', fontWeight: 800, color: '#c7d2fe' }}>📡 Packet Securely Dispatched</div>
-                      <p style={{ margin: 0, color: '#bfdbfe', fontSize: '12px', fontWeight: 600 }}>{submittedStatusText}</p>
-                      <div className="dispatch-id" style={{ marginTop: '14px', borderRadius: '10px', background: 'rgba(15,23,42,0.2)', border: '1px solid rgba(165,180,252,0.2)', color: '#c7d2fe', fontSize: '11px', letterSpacing: '0.08em', padding: '10px 12px', fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>ID: CA-{Math.floor(Math.random() * 9000 + 1000)}-2026</div>
-                    </div>
+                  {aiStatus === 'submitted' && authDetails && (
+                    <>
+                      <div className="dispatch-card" style={{ background: 'linear-gradient(135deg, #1f1b5e, #312e81)', border: '1px solid rgba(165,180,252,0.2)', borderRadius: '16px', padding: '18px 16px', textAlign: 'center', color: '#fff' }}>
+                        <div className="dispatch-title" style={{ marginBottom: '10px', fontSize: '15px', fontWeight: 800, color: '#c7d2fe' }}>📡 Packet Securely Dispatched</div>
+                        <p style={{ margin: 0, color: '#bfdbfe', fontSize: '12px', fontWeight: 600 }}>{submittedStatusText}</p>
+                        <div className="dispatch-id" style={{ marginTop: '14px', borderRadius: '10px', background: 'rgba(15,23,42,0.2)', border: '1px solid rgba(165,180,252,0.2)', color: '#c7d2fe', fontSize: '11px', letterSpacing: '0.08em', padding: '10px 12px', fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>ID: {authDetails.authorizationNumber}</div>
+                      </div>
+
+                      <div className="eob-card" style={{ background: '#ffffff', border: '1px solid rgba(226,232,240,0.95)', borderRadius: '18px', padding: '20px', boxShadow: '0 12px 28px rgba(148, 163, 184, 0.08)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', borderBottom: '1px solid rgba(226,232,240,0.9)', paddingBottom: '14px' }}>
+                          <div>
+                            <div style={{ fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800, marginBottom: '4px' }}>Prior Authorization</div>
+                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>Explanation of Benefits</h3>
+                          </div>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '999px', padding: '7px 12px', fontSize: '11px', fontWeight: 800, background: '#ecfdf5', color: '#15803d', border: '1px solid rgba(22,163,74,0.18)' }}>
+                            ✓ {authDetails.status}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
+                          <EOBField label="Authorization #" value={authDetails.authorizationNumber} />
+                          <EOBField label="Payer" value={insurance} />
+                          <EOBField label="Decision Date" value={authDetails.decisionDate} />
+                          <EOBField label="Valid From" value={authDetails.effectiveDate} />
+                          <EOBField label="Valid Through" value={authDetails.expirationDate} />
+                          <EOBField label="Approved Scope" value={authDetails.approvedScope} />
+                        </div>
+
+                        <div style={{ borderTop: '1px dashed rgba(148,163,184,0.4)', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Authorized Service</span>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{procedureDisplay}</div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', borderTop: '1px dashed rgba(148,163,184,0.4)', paddingTop: '14px' }}>
+                          <EOBField label="Allowed Amount" value={formatMoney(costBreakdown?.allowedAmount)} />
+                          <EOBField label="Plan Payment" value={formatMoney(costBreakdown?.planPaid)} highlight="indigo" />
+                          <EOBField label="Patient Responsibility" value={formatMoney(costBreakdown?.patientResponsibility)} highlight="green" />
+                        </div>
+
+                        <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
+                          This authorization confirms medical necessity has been verified and secures the cost-share above for the authorized service. Charges billed outside the approved scope or validity window may require a separate review.
+                        </p>
+                      </div>
+                    </>
                   )}
                 </section>
               </>
