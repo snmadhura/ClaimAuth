@@ -78,6 +78,7 @@ export default function App() {
   const [authDetails, setAuthDetails] = useState(null);
   const [clinicalEvidence, setClinicalEvidence] = useState(null);
   const [evidenceExpanded, setEvidenceExpanded] = useState(false);
+  const [payloadExpanded, setPayloadExpanded] = useState(false);
 
   const formatMoney = (value) => {
     const num = typeof value === 'number' ? value : parseFloat(value);
@@ -521,20 +522,15 @@ export default function App() {
     setTimeout(() => setAiStatus('complete'), 2000);
   };
 
-  const handleTransmit = () => {
-    const decisionDate = new Date();
-    const effectiveDate = new Date(decisionDate);
-    const expirationDate = new Date(decisionDate);
-    expirationDate.setDate(expirationDate.getDate() + 60);
-    const formatDate = (d) => d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const handlePreparePayload = () => {
+    const preparedAt = new Date();
+    const formatDate = (d) => d.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
     setAuthDetails({
-      authorizationNumber: generateAuthorizationNumber(),
-      status: 'Approved',
-      decisionDate: formatDate(decisionDate),
-      effectiveDate: formatDate(effectiveDate),
-      expirationDate: formatDate(expirationDate),
-      approvedScope: '1 unit • single episode of care',
+      referenceId: generateAuthorizationNumber(),
+      preparedAt: formatDate(preparedAt),
+      status: 'Draft — not submitted',
+      payload: buildPasClaimPayload(),
     });
     setAiStatus('submitted');
   };
@@ -549,8 +545,48 @@ export default function App() {
 
   const justificationText = `${patient?.name || 'Robert Chen'} is being managed under ${clinician}'s active care plan. The authorization review focuses on ${procedureDisplay}, using documented chart history, clinical necessity, and payer policy alignment to support treatment continuity and appropriate utilization. This determination reflects the least-burdensome clinically appropriate care pathway and is framed for coverage review based on the selected patient context.`;
   const alertBannerText = `${clinician} submitted a care authorization request for ${patient?.name || 'the selected patient'} involving ${procedureDisplay}. Payer review requires documented medical necessity and policy compliance before treatment scheduling is authorized.`;
-  const submittedStatusText = `${procedureDisplay} is now secured for review under ${insurance} coverage rules and locked for secure transmission.`;
-  const transmissionSubtitle = `ℹ️ Transmitting will lock the authorization review for ${procedureDisplay} into the secure payer transaction pipeline.`;
+  const submittedStatusText = `A ${procedureDisplay} prior authorization payload has been prepared for ${patient?.name || 'the selected patient'} under ${insurance}. It has not been sent anywhere yet — this demo has no connected payer or clearinghouse endpoint.`;
+  const transmissionSubtitle = 'ℹ️ This prepares the request payload locally. Sending it would require a connected payer or clearinghouse endpoint, which this demo does not have configured.';
+
+  // Shapes the request the way HL7's Da Vinci Prior Authorization Support
+  // (PAS) implementation guide expects — a FHIR Claim resource with
+  // use: "preauthorization" — so the architecture is correct even though
+  // there's no real payer/clearinghouse endpoint here to $submit it to.
+  const buildPasClaimPayload = () => ({
+    resourceType: 'Claim',
+    status: 'draft',
+    type: {
+      coding: [{ system: 'http://terminology.hl7.org/CodeSystem/claim-type', code: 'professional', display: 'Professional' }],
+    },
+    use: 'preauthorization',
+    patient: { display: patient?.name || 'Selected patient' },
+    created: new Date().toISOString(),
+    provider: { display: clinician || 'Requesting provider' },
+    priority: { coding: [{ code: 'normal' }] },
+    insurance: [
+      {
+        sequence: 1,
+        focal: true,
+        coverage: { display: insurance || 'Coverage pending' },
+      },
+    ],
+    item: [
+      {
+        sequence: 1,
+        productOrService: {
+          coding: procedureInfo.code && procedureInfo.code !== 'N/A'
+            ? [{ system: 'http://www.ama-assn.org/go/cpt', code: procedureInfo.code, display: procedureInfo.title }]
+            : [],
+          text: procedureInfo.title,
+        },
+        unitPrice: { value: costBreakdown?.billedCharges ?? null, currency: 'USD' },
+      },
+    ],
+    total: { value: costBreakdown?.billedCharges ?? null, currency: 'USD' },
+    supportingInfo: [
+      { sequence: 1, category: { text: 'Clinical justification' }, valueString: justificationText },
+    ],
+  });
 
   if (loading) {
     return (
@@ -796,8 +832,8 @@ export default function App() {
                         <textarea readOnly value={justificationText} style={{ width: '100%', boxSizing: 'border-box', minHeight: '112px', resize: 'none', borderRadius: '12px', border: '1px solid rgba(148,163,184,0.42)', background: '#f8fafc', color: '#334155', fontSize: '13px', lineHeight: 1.7, padding: '12px 14px', fontFamily: 'inherit' }} />
                       </div>
 
-                      <button type="button" className="inverse-button" onClick={handleTransmit} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: 'linear-gradient(135deg, #0f172a, #1e293b)', color: '#fff', boxShadow: '0 14px 22px rgba(15,23,42,0.2)' }}>
-                        Transmit Authorization Payload
+                      <button type="button" className="inverse-button" onClick={handlePreparePayload} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: 'linear-gradient(135deg, #0f172a, #1e293b)', color: '#fff', boxShadow: '0 14px 22px rgba(15,23,42,0.2)' }}>
+                        Prepare Prior Authorization Payload
                       </button>
                       <div className="transmission-note" style={{ fontSize: '12px', lineHeight: 1.6, color: '#475569', padding: '0 2px' }}>{transmissionSubtitle}</div>
                     </div>
@@ -806,45 +842,64 @@ export default function App() {
                   {aiStatus === 'submitted' && authDetails && (
                     <>
                       <div className="dispatch-card" style={{ background: 'linear-gradient(135deg, #1f1b5e, #312e81)', border: '1px solid rgba(165,180,252,0.2)', borderRadius: '16px', padding: '18px 16px', textAlign: 'center', color: '#fff' }}>
-                        <div className="dispatch-title" style={{ marginBottom: '10px', fontSize: '15px', fontWeight: 800, color: '#c7d2fe' }}>📡 Packet Securely Dispatched</div>
+                        <div className="dispatch-title" style={{ marginBottom: '10px', fontSize: '15px', fontWeight: 800, color: '#c7d2fe' }}>📦 Payload Prepared — Not Yet Sent</div>
                         <p style={{ margin: 0, color: '#bfdbfe', fontSize: '12px', fontWeight: 600 }}>{submittedStatusText}</p>
-                        <div className="dispatch-id" style={{ marginTop: '14px', borderRadius: '10px', background: 'rgba(15,23,42,0.2)', border: '1px solid rgba(165,180,252,0.2)', color: '#c7d2fe', fontSize: '11px', letterSpacing: '0.08em', padding: '10px 12px', fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>ID: {authDetails.authorizationNumber}</div>
+                        <div className="dispatch-id" style={{ marginTop: '14px', borderRadius: '10px', background: 'rgba(15,23,42,0.2)', border: '1px solid rgba(165,180,252,0.2)', color: '#c7d2fe', fontSize: '11px', letterSpacing: '0.08em', padding: '10px 12px', fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>Local reference: {authDetails.referenceId}</div>
                       </div>
 
                       <div className="eob-card" style={{ background: '#ffffff', border: '1px solid rgba(226,232,240,0.95)', borderRadius: '18px', padding: '20px', boxShadow: '0 12px 28px rgba(148, 163, 184, 0.08)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', borderBottom: '1px solid rgba(226,232,240,0.9)', paddingBottom: '14px' }}>
                           <div>
                             <div style={{ fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800, marginBottom: '4px' }}>Prior Authorization</div>
-                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>Explanation of Benefits</h3>
+                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>Request Summary</h3>
                           </div>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '999px', padding: '7px 12px', fontSize: '11px', fontWeight: 800, background: '#ecfdf5', color: '#15803d', border: '1px solid rgba(22,163,74,0.18)' }}>
-                            ✓ {authDetails.status}
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '999px', padding: '7px 12px', fontSize: '11px', fontWeight: 800, background: '#fef3c7', color: '#b45309', border: '1px solid rgba(251,191,36,0.25)' }}>
+                            🕓 {authDetails.status}
                           </span>
                         </div>
 
+                        <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
+                          This is <strong>not</strong> an Explanation of Benefits — an EOB is issued by the payer after they've adjudicated a request, and nothing has been sent to a payer yet. This is a record of what's been prepared locally.
+                        </p>
+
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
-                          <EOBField label="Authorization #" value={authDetails.authorizationNumber} />
-                          <EOBField label="Payer" value={insurance} />
-                          <EOBField label="Decision Date" value={authDetails.decisionDate} />
-                          <EOBField label="Valid From" value={authDetails.effectiveDate} />
-                          <EOBField label="Valid Through" value={authDetails.expirationDate} />
-                          <EOBField label="Approved Scope" value={authDetails.approvedScope} />
+                          <EOBField label="Local Reference ID" value={authDetails.referenceId} />
+                          <EOBField label="Prepared At" value={authDetails.preparedAt} />
+                          <EOBField label="Intended Payer" value={insurance} />
                         </div>
 
                         <div style={{ borderTop: '1px dashed rgba(148,163,184,0.4)', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Authorized Service</span>
+                          <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Requested Service</span>
                           <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{procedureDisplay}</div>
                         </div>
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', borderTop: '1px dashed rgba(148,163,184,0.4)', paddingTop: '14px' }}>
-                          <EOBField label="Allowed Amount" value={formatMoney(costBreakdown?.allowedAmount)} />
-                          <EOBField label="Plan Payment" value={formatMoney(costBreakdown?.planPaid)} highlight="indigo" />
-                          <EOBField label="Patient Responsibility" value={formatMoney(costBreakdown?.patientResponsibility)} highlight="green" />
+                          <EOBField label="Billed Charges" value={formatMoney(costBreakdown?.billedCharges)} />
+                          <EOBField label="Estimated Plan Payment" value={formatMoney(costBreakdown?.planPaid)} highlight="indigo" />
+                          <EOBField label="Estimated Patient Responsibility" value={formatMoney(costBreakdown?.patientResponsibility)} highlight="green" />
                         </div>
 
-                        <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
-                          This authorization confirms medical necessity has been verified and secures the cost-share above for the authorized service. Charges billed outside the approved scope or validity window may require a separate review.
-                        </p>
+                        <div style={{ borderTop: '1px dashed rgba(148,163,184,0.4)', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <button
+                            type="button"
+                            onClick={() => setPayloadExpanded((prev) => !prev)}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                            aria-expanded={payloadExpanded}
+                          >
+                            <span style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>FHIR Claim Payload (Da Vinci PAS shape)</span>
+                            <span style={{ fontSize: '12px', fontWeight: 800, color: '#4338ca' }}>{payloadExpanded ? 'Hide ▲' : 'Show ▼'}</span>
+                          </button>
+                          {payloadExpanded && (
+                            <>
+                              <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
+                                This is the FHIR <code>Claim</code> resource (<code>use: "preauthorization"</code>) that a real integration would <code>$submit</code> to a payer's or clearinghouse's Prior Authorization Support (PAS) endpoint. No such endpoint is connected here, so nothing beyond this preview happens.
+                              </p>
+                              <pre style={{ margin: 0, maxHeight: '260px', overflow: 'auto', background: '#0f172a', color: '#c7d2fe', borderRadius: '10px', padding: '14px', fontSize: '11px', lineHeight: 1.6, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
+                                {JSON.stringify(authDetails.payload, null, 2)}
+                              </pre>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </>
                   )}
