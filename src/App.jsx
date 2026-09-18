@@ -64,6 +64,52 @@ function EvidenceCategory({ categoryKey, items }) {
   );
 }
 
+const REVIEW_STEPS = [
+  { key: 'justification', label: 'Justification' },
+  { key: 'evidence', label: 'Evidence' },
+  { key: 'payload', label: 'Payload' },
+  { key: 'submit', label: 'Submit' },
+];
+
+function StepIndicator({ steps, currentIndex, onSelect }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+      {steps.map((step, index) => {
+        const isActive = index === currentIndex;
+        const isDone = index < currentIndex;
+        return (
+          <React.Fragment key={step.key}>
+            <button
+              type="button"
+              onClick={() => onSelect(index)}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', border: 0, background: 'transparent', padding: '4px 2px', cursor: 'pointer' }}
+            >
+              <span
+                style={{
+                  width: '22px',
+                  height: '22px',
+                  borderRadius: '50%',
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  background: isActive ? '#4338ca' : isDone ? '#e0e7ff' : '#f1f5f9',
+                  color: isActive ? '#fff' : isDone ? '#4338ca' : '#94a3b8',
+                  border: isActive ? 'none' : '1px solid rgba(226,232,240,1)',
+                }}
+              >
+                {isDone ? '✓' : index + 1}
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: isActive ? 800 : 600, color: isActive ? '#0f172a' : '#94a3b8' }}>{step.label}</span>
+            </button>
+            {index < steps.length - 1 && <span style={{ width: '14px', height: '1px', background: 'rgba(203,213,225,0.9)', flexShrink: 0 }} />}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function App() {
   const [patient, setPatient] = useState(null);
   const [insurance, setInsurance] = useState('Checking registry...');
@@ -77,7 +123,7 @@ export default function App() {
   const [costBreakdown, setCostBreakdown] = useState(null);
   const [authDetails, setAuthDetails] = useState(null);
   const [clinicalEvidence, setClinicalEvidence] = useState(null);
-  const [evidenceExpanded, setEvidenceExpanded] = useState(false);
+  const [reviewStep, setReviewStep] = useState(0);
   const [payloadExpanded, setPayloadExpanded] = useState(false);
 
   const formatMoney = (value) => {
@@ -519,17 +565,20 @@ export default function App() {
 
   const handleAiPreFill = () => {
     setAiStatus('scanning');
-    setTimeout(() => setAiStatus('complete'), 2000);
+    setTimeout(() => {
+      setReviewStep(0);
+      setAiStatus('complete');
+    }, 2000);
   };
 
-  const handlePreparePayload = () => {
-    const preparedAt = new Date();
+  const handleSubmit = () => {
+    const submittedAt = new Date();
     const formatDate = (d) => d.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
     setAuthDetails({
       referenceId: generateAuthorizationNumber(),
-      preparedAt: formatDate(preparedAt),
-      status: 'Draft — not submitted',
+      submittedAt: formatDate(submittedAt),
+      status: 'Marked as submitted — no payer endpoint connected',
       payload: buildPasClaimPayload(),
     });
     setAiStatus('submitted');
@@ -545,7 +594,7 @@ export default function App() {
 
   const justificationText = `${patient?.name || 'Robert Chen'} is being managed under ${clinician}'s active care plan. The authorization review focuses on ${procedureDisplay}, using documented chart history, clinical necessity, and payer policy alignment to support treatment continuity and appropriate utilization. This determination reflects the least-burdensome clinically appropriate care pathway and is framed for coverage review based on the selected patient context.`;
   const alertBannerText = `${clinician} submitted a care authorization request for ${patient?.name || 'the selected patient'} involving ${procedureDisplay}. Payer review requires documented medical necessity and policy compliance before treatment scheduling is authorized.`;
-  const submittedStatusText = `A ${procedureDisplay} prior authorization payload has been prepared for ${patient?.name || 'the selected patient'} under ${insurance}. It has not been sent anywhere yet — this demo has no connected payer or clearinghouse endpoint.`;
+  const submittedStatusText = `A ${procedureDisplay} prior authorization request for ${patient?.name || 'the selected patient'} under ${insurance} has been marked as submitted in this workspace. It has not actually left the browser — this demo has no connected payer or clearinghouse endpoint.`;
   const transmissionSubtitle = 'ℹ️ This prepares the request payload locally. Sending it would require a connected payer or clearinghouse endpoint, which this demo does not have configured.';
 
   // Shapes the request the way HL7's Da Vinci Prior Authorization Support
@@ -786,63 +835,101 @@ export default function App() {
                   )}
 
                   {aiStatus === 'complete' && (
-                    <div className="assistant-output" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div className="assistant-output" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       <div className="success-banner" style={{ background: 'linear-gradient(135deg, #ecfdf5, #f0fdf4)', border: '1px solid rgba(22,163,74,0.18)', color: '#166534', borderRadius: '12px', padding: '10px 12px', fontSize: '12px', fontWeight: 700 }}>✓ Evidence mapped successfully to payer policy and chart criteria.</div>
 
-                      <div className="checklist-panel" style={{ background: 'linear-gradient(135deg, #f8fafc, #edf2ff)', border: '1px solid rgba(165,180,252,0.2)', borderRadius: '14px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div className="checklist-title" style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#4338ca', fontWeight: 800 }}>Payer Guideline Criteria Validation Checklist</div>
-                        <div className="checklist-row" style={{ fontSize: '12px', lineHeight: 1.6, color: '#0f172a' }}>• Requested service aligns with documented clinical intent ──► [ PASS ]</div>
-                        <div className="checklist-row" style={{ fontSize: '12px', lineHeight: 1.6, color: '#0f172a' }}>• Prior authorization criteria and network constraints reviewed ──► [ PASS ]</div>
-                      </div>
+                      <StepIndicator steps={REVIEW_STEPS} currentIndex={reviewStep} onSelect={setReviewStep} />
 
-                      <div className="evidence-panel" style={{ background: '#ffffff', border: '1px solid rgba(226,232,240,0.95)', borderRadius: '14px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {reviewStep === 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                          <div className="checklist-panel" style={{ background: 'linear-gradient(135deg, #f8fafc, #edf2ff)', border: '1px solid rgba(165,180,252,0.2)', borderRadius: '14px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div className="checklist-title" style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#4338ca', fontWeight: 800 }}>Payer Guideline Criteria Validation Checklist</div>
+                            <div className="checklist-row" style={{ fontSize: '12px', lineHeight: 1.6, color: '#0f172a' }}>• Requested service aligns with documented clinical intent ──► [ PASS ]</div>
+                            <div className="checklist-row" style={{ fontSize: '12px', lineHeight: 1.6, color: '#0f172a' }}>• Prior authorization criteria and network constraints reviewed ──► [ PASS ]</div>
+                          </div>
+
+                          <div className="field-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <label style={{ fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Generated Justification Summary</label>
+                            <textarea readOnly value={justificationText} style={{ width: '100%', boxSizing: 'border-box', minHeight: '112px', resize: 'none', borderRadius: '12px', border: '1px solid rgba(148,163,184,0.42)', background: '#f8fafc', color: '#334155', fontSize: '13px', lineHeight: 1.7, padding: '12px 14px', fontFamily: 'inherit' }} />
+                          </div>
+                        </div>
+                      )}
+
+                      {reviewStep === 1 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                          <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
+                            These are the structured chart entries the AI checked before drafting the justification — not a summary of a clinical note, since none is on file for this patient in this system. Verify against the chart before submitting.
+                          </p>
+                          {clinicalEvidence ? (
+                            <>
+                              <EvidenceCategory categoryKey="conditions" items={clinicalEvidence.conditions} />
+                              <EvidenceCategory categoryKey="medications" items={clinicalEvidence.medications} />
+                              <EvidenceCategory categoryKey="procedures" items={clinicalEvidence.procedures} />
+                              <EvidenceCategory categoryKey="allergies" items={clinicalEvidence.allergies} />
+                            </>
+                          ) : (
+                            <div style={{ fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' }}>Loading chart evidence...</div>
+                          )}
+                        </div>
+                      )}
+
+                      {reviewStep === 2 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
+                            This is the FHIR <code>Claim</code> resource (<code>use: "preauthorization"</code>) shaped to HL7's Da Vinci Prior Authorization Support (PAS) guide — what a real integration would <code>$submit</code> to a payer's or clearinghouse's endpoint.
+                          </p>
+                          <pre style={{ margin: 0, maxHeight: '320px', overflow: 'auto', background: '#0f172a', color: '#c7d2fe', borderRadius: '10px', padding: '14px', fontSize: '11px', lineHeight: 1.6, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
+                            {JSON.stringify(buildPasClaimPayload(), null, 2)}
+                          </pre>
+                        </div>
+                      )}
+
+                      {reviewStep === 3 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                          <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
+                            Final check before submitting. This confirms what's about to go out and to whom.
+                          </p>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
+                            <EOBField label="Patient" value={patient?.name || '—'} />
+                            <EOBField label="Requesting Provider" value={clinician} />
+                            <EOBField label="Requested Service" value={procedureDisplay} />
+                            <EOBField label="Intended Payer" value={insurance} />
+                            <EOBField label="Estimated Patient Responsibility" value={formatMoney(costBreakdown?.patientResponsibility)} highlight="green" />
+                            <EOBField label="Estimated Plan Payment" value={formatMoney(costBreakdown?.planPaid)} highlight="indigo" />
+                          </div>
+                          <button type="button" className="inverse-button" onClick={handleSubmit} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: 'linear-gradient(135deg, #0f172a, #1e293b)', color: '#fff', boxShadow: '0 14px 22px rgba(15,23,42,0.2)' }}>
+                            Submit Prior Authorization Request
+                          </button>
+                          <div className="transmission-note" style={{ fontSize: '12px', lineHeight: 1.6, color: '#475569', padding: '0 2px' }}>{transmissionSubtitle}</div>
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
                         <button
                           type="button"
-                          onClick={() => setEvidenceExpanded((prev) => !prev)}
-                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', textAlign: 'left' }}
-                          aria-expanded={evidenceExpanded}
+                          onClick={() => setReviewStep((s) => Math.max(0, s - 1))}
+                          disabled={reviewStep === 0}
+                          style={{ border: '1px solid rgba(226,232,240,1)', borderRadius: '10px', padding: '9px 14px', fontSize: '12px', fontWeight: 700, background: '#fff', color: reviewStep === 0 ? '#cbd5e1' : '#334155', cursor: reviewStep === 0 ? 'not-allowed' : 'pointer' }}
                         >
-                          <span style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>
-                            Clinical Evidence Reviewed{clinicalEvidence ? ` (${clinicalEvidence.totalCount})` : ''}
-                          </span>
-                          <span style={{ fontSize: '12px', fontWeight: 800, color: '#4338ca' }}>{evidenceExpanded ? 'Hide ▲' : 'Show ▼'}</span>
+                          ← Back
                         </button>
-
-                        {evidenceExpanded && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '4px' }}>
-                            <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
-                              These are the structured chart entries the AI checked before drafting the justification below — not a summary of a clinical note, since none is on file for this patient in this system. Verify against the chart before transmitting.
-                            </p>
-                            {clinicalEvidence ? (
-                              <>
-                                <EvidenceCategory categoryKey="conditions" items={clinicalEvidence.conditions} />
-                                <EvidenceCategory categoryKey="medications" items={clinicalEvidence.medications} />
-                                <EvidenceCategory categoryKey="procedures" items={clinicalEvidence.procedures} />
-                                <EvidenceCategory categoryKey="allergies" items={clinicalEvidence.allergies} />
-                              </>
-                            ) : (
-                              <div style={{ fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' }}>Loading chart evidence...</div>
-                            )}
-                          </div>
+                        {reviewStep < REVIEW_STEPS.length - 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setReviewStep((s) => Math.min(REVIEW_STEPS.length - 1, s + 1))}
+                            style={{ border: 0, borderRadius: '10px', padding: '9px 16px', fontSize: '12px', fontWeight: 800, background: 'linear-gradient(135deg, #4f46e5, #4338ca)', color: '#fff', cursor: 'pointer' }}
+                          >
+                            Next →
+                          </button>
                         )}
                       </div>
-
-                      <div className="field-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <label style={{ fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Generated Justification Summary</label>
-                        <textarea readOnly value={justificationText} style={{ width: '100%', boxSizing: 'border-box', minHeight: '112px', resize: 'none', borderRadius: '12px', border: '1px solid rgba(148,163,184,0.42)', background: '#f8fafc', color: '#334155', fontSize: '13px', lineHeight: 1.7, padding: '12px 14px', fontFamily: 'inherit' }} />
-                      </div>
-
-                      <button type="button" className="inverse-button" onClick={handlePreparePayload} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: 'linear-gradient(135deg, #0f172a, #1e293b)', color: '#fff', boxShadow: '0 14px 22px rgba(15,23,42,0.2)' }}>
-                        Prepare Prior Authorization Payload
-                      </button>
-                      <div className="transmission-note" style={{ fontSize: '12px', lineHeight: 1.6, color: '#475569', padding: '0 2px' }}>{transmissionSubtitle}</div>
                     </div>
                   )}
 
                   {aiStatus === 'submitted' && authDetails && (
                     <>
                       <div className="dispatch-card" style={{ background: 'linear-gradient(135deg, #1f1b5e, #312e81)', border: '1px solid rgba(165,180,252,0.2)', borderRadius: '16px', padding: '18px 16px', textAlign: 'center', color: '#fff' }}>
-                        <div className="dispatch-title" style={{ marginBottom: '10px', fontSize: '15px', fontWeight: 800, color: '#c7d2fe' }}>📦 Payload Prepared — Not Yet Sent</div>
+                        <div className="dispatch-title" style={{ marginBottom: '10px', fontSize: '15px', fontWeight: 800, color: '#c7d2fe' }}>📦 Submitted Locally — Not Sent to a Payer</div>
                         <p style={{ margin: 0, color: '#bfdbfe', fontSize: '12px', fontWeight: 600 }}>{submittedStatusText}</p>
                         <div className="dispatch-id" style={{ marginTop: '14px', borderRadius: '10px', background: 'rgba(15,23,42,0.2)', border: '1px solid rgba(165,180,252,0.2)', color: '#c7d2fe', fontSize: '11px', letterSpacing: '0.08em', padding: '10px 12px', fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>Local reference: {authDetails.referenceId}</div>
                       </div>
@@ -864,7 +951,7 @@ export default function App() {
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
                           <EOBField label="Local Reference ID" value={authDetails.referenceId} />
-                          <EOBField label="Prepared At" value={authDetails.preparedAt} />
+                          <EOBField label="Submitted At" value={authDetails.submittedAt} />
                           <EOBField label="Intended Payer" value={insurance} />
                         </div>
 
