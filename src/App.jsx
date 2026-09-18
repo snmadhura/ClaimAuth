@@ -143,8 +143,10 @@ export default function App() {
   const patientInitial = patient?.name ? patient.name.charAt(0).toUpperCase() : 'P';
   const procedureTitle = procedureInfo.title || 'requested clinical service';
   const procedureCodeLabel = procedureInfo.code && procedureInfo.code !== 'N/A' ? `CPT ${procedureInfo.code}` : 'requested clinical service';
-  const justificationText = `Patient records managed under ${clinician} track ongoing clinical criteria for ${procedureTitle.toLowerCase()}. This authorization request is evaluated against the active payer policy and patient-specific diagnostic profile.`;
+  const justificationText = `Patient charts managed under ${clinician} track ongoing severe subcutaneous allergy criteria. CPT 180256009 is single-unit requested ($2,450 contracted cost rate) as medically necessary based on documented standard first-line pathway failures.`;
   const alertBannerText = `${clinician} submitted an order for ${patient?.name || 'the selected patient'} for ${procedureCodeLabel === 'requested clinical service' ? procedureTitle : `${procedureCodeLabel} (${procedureTitle})`}. Payer guidelines mandate clinical approval prior to appointment booking.`;
+  const submittedStatusText = `Clearance: 1 Unit CPT 180256009 Approved for Contract Value $2,450.00`;
+  const transmissionSubtitle = 'ℹ️ Transmitting will lock a 1-unit approval voucher token valued at $2,450.00 directly into the Aetna transaction pipeline network.';
 
   if (loading) {
     return (
@@ -228,6 +230,27 @@ export default function App() {
           </div>
         </section>
 
+        <div className="cost-analysis-shell">
+          <div className="cost-grid">
+            <div className="cost-card">
+              <span className="cost-label">Target Code</span>
+              <strong>CPT 180256009 - Subcutaneous Immunotherapy</strong>
+            </div>
+            <div className="cost-card">
+              <span className="cost-label">Approval Scope &amp; Quantity</span>
+              <strong>1 Event / Unit Only - Hard Cap Per Payer Contract</strong>
+            </div>
+            <div className="cost-card">
+              <span className="cost-label">Estimated Contracted Cost</span>
+              <strong>$2,450.00 - In-Network Agreed Rate</strong>
+            </div>
+            <div className="cost-card cost-card--green">
+              <span className="cost-label">Patient Financial Responsibility</span>
+              <strong>$150.00 Copay Apply - Deductible Met</strong>
+            </div>
+          </div>
+        </div>
+
         <main className="workspace-content">
           {activeTab === 'copilot' ? (
             <>
@@ -246,15 +269,31 @@ export default function App() {
                 )}
 
                 {aiStatus === 'scanning' && (
-                  <div className="loading-inline">
-                    <span className="inline-spinner" />
-                    Extracting EHR Clinical Data Metrics...
+                  <div className="loading-inline loading-inline--stacked">
+                    <div className="scan-log-row">
+                      <span className="inline-spinner" />
+                      <span>🔍 [STEP 1/3] Mapping CPT 180256009 against Aetna Network Price Tables... (Verified $2,450.00)</span>
+                    </div>
+                    <div className="scan-log-row">
+                      <span className="inline-spinner inline-spinner--small" />
+                      <span>⚖️ [STEP 2/3] Extracting Medical Justification Evidence from Chart History...</span>
+                    </div>
+                    <div className="scan-log-row">
+                      <span className="inline-spinner inline-spinner--small" />
+                      <span>⏳ [STEP 3/3] Structuring HIPAA Transport Payload...</span>
+                    </div>
                   </div>
                 )}
 
                 {aiStatus === 'complete' && (
                   <div className="assistant-output">
                     <div className="success-banner">✓ Extracted evidence mapped perfectly to insurance guidelines.</div>
+
+                    <div className="checklist-panel">
+                      <div className="checklist-title">Payer Guideline Criteria Validation Checklist</div>
+                      <div className="checklist-row">• CPT Code scope matches diagnostic intent parameters ──► [ PASS ]</div>
+                      <div className="checklist-row">• Documented failure of alternate low-cost configurations ($200 threshold) ──► [ PASS ]</div>
+                    </div>
 
                     <div className="field-group">
                       <label>Generated Justification Summary</label>
@@ -264,13 +303,14 @@ export default function App() {
                     <button type="button" className="inverse-button" onClick={() => setAiStatus('submitted')}>
                       Transmit Authorization Payload
                     </button>
+                    <div className="transmission-note">{transmissionSubtitle}</div>
                   </div>
                 )}
 
                 {aiStatus === 'submitted' && (
                   <div className="dispatch-card">
                     <div className="dispatch-title">📡 Packet Securely Dispatched</div>
-                    <p>Status: Intake Registry Processing</p>
+                    <p>{submittedStatusText}</p>
                     <div className="dispatch-id">ID: CA-9831-2026</div>
                   </div>
                 )}
