@@ -2,24 +2,6 @@ import React, { useState, useEffect } from 'react';
 import FHIR from 'fhirclient';
 import './App.css';
 
-// This is the SMART Launcher's EHR-launch simulation entry point for this
-// app — pre-configured with this app's URL, the FHIR server, and a pool of
-// candidate patients/practitioners. Visiting it re-runs the launcher's own
-// patient/practitioner picker screens and then redirects back into
-// ClaimAuth with a fresh launch — it is NOT the same as the bare
-// https://launch.smarthealthit.org/ homepage, which is a full settings/
-// config screen and is confusing to land a clinician on.
-//
-// This link is tied to this specific SMART Launcher scenario (this app's
-// URL, FHIR version, and candidate patient/practitioner pool). If that
-// scenario is ever reconfigured in the launcher, copy the new link from
-// there and swap it in here. In a real hospital deployment there is no
-// launcher at all — a clinician just clicks the app icon from inside a
-// patient's chart in the EHR — so this entire mechanism is specific to
-// testing in this sandbox.
-const LAUNCHER_RETURN_URL =
-  'https://launch.smarthealthit.org/ehr?app=https%3A%2F%2Fclaim-auth.vercel.app%2F%3Fiss%3Dhttps%253A%252F%252Flaunch.smarthealthit.org%252Fv%252Fr4%252Ffhir&launch=WzAsImIwZDI4MDg0LWZjYWQtNGFmMi05YTNkLWMwMDkwYTZlMjk0YSw5YWZlMjhkYy03YWQ1LTRlOTAtYjZhNi0xNjEyM2VhZTk4YzMsY2E5NWIyYzUtZDMwNi00NGQ0LWE3ZmEtNzU2ZGU3MzZlNjhlLGE3NDY1MWE2LTgxNDEtNGM3ZS05MWI1LWE0M2NlODBlNmI5MixhZThhODk2ZS1iYmQ5LTRlMWEtYTczMi0xNTY4ZGY5ZDc1MjcsMTU2NjExMTItNzk2Yy00NjBjLWJmN2EtNmIyOTdlMzNmMTEzLGQzNGU5ZTJkLWE4MWEtNDA3ZC05NTI3LTgyZDFmZGIwNjQyMSw5MTExMDNhMy0wNjU3LTQ5NWMtYjE3MC1iMmVlNjA3OGI1YzgsZjlmZWMzOGItM2M1Mi00NWRlLWJmNDgtNTNkNWE5OTNjZTk4LGY4MTNmM2ExLTJmNGUtNGU0Yy1hMGVlLTNkNWRjNTI4NmFlOCxhZTYyMjVlYy1jNGMwLTQwMGYtYmJjZC00YWJhMTgxYmU4NjkiLCI1MjkxOTA5OS02YTdhLTQ0MmMtYjBkNS0yYjAyYzBkZDRiNzQsODlhZjUwZGItZjg1Yy00OTdmLWFhMWYtZjFjNWNlYTcwYmM3LGY0YmY1MjY1LThkOGUtNDA1NS1hNGU1LWIzNDg1M2YxMDk5Ziw2MzAwM2FiYi0zOTI0LTQ2ZGYtYTc1YS0wYTFmNDI3MzMxODksYTZkZmU4ZTUtZjY1ZS00ZWRhLWE1NzItODUwZjdhYzBkN2NmLGZkN2E3MzdlLTFhYzUtNGM0ZS04OWNkLTFjMDdkYTRjYTFjMixlNDQzYWM1OC04ZWNlLTQzODUtOGQ1NS03NzVjMWI4ZjNhMzcsOWIyNTY0ZmQtMWU0Ny00MjBhLWJkZWQtMzg3MjM0MDcwZWYzLDdjZGNlZTU2LWEwYzAtNDE5Yy05OGZkLWE3Y2NjOTgxZjY1MCxjMDIwNjRiZS0xMDc1LTQwMjctYTdlYi0wMjdjNDc2ZWYzZTQsMDNkZmFhMmYtYTU0Yi00YWNmLWJkNTQtODBkZWZlZjZlZDUxLDM2YTZlMTViLTczNDUtNDJhZS04YTU5LTdhMzUwNTllYmI0Nyw5ODI4NjE3ZS00OTZlLTQwM2UtYjk5Zi0zZDM2NDZkNGUwM2IsYjExOWUwYTktNmIxMS00MmMzLThhMzctMjRjNjhmOGVhYTc4IiwiQVVUTyIsMCwwLDEsIiIsIiIsIiIsIiIsIiIsIiIsIiIsMCwxLCIiXQ';
-
 const ACTIVITY_STORAGE_PREFIX = 'claimauth_activity_';
 
 // Most Synthea test patients only carry one active Coverage — there's
@@ -718,7 +700,7 @@ export default function App() {
   // and relaunch.
   const handleRestartSession = () => {
     const confirmed = window.confirm(
-      "This ends your current session. To view a different patient, you'll need to return to your EHR and relaunch ClaimAuth from that patient's chart. Continue?"
+      "This ends your current session. To view a different patient, you'll need to select one using your EHR or the launcher, then refresh. Continue?"
     );
     if (!confirmed) return;
 
@@ -849,10 +831,11 @@ export default function App() {
           <div aria-hidden="true" style={{ fontSize: '32px', marginBottom: '4px' }}>🔒</div>
           <div className="loading-title" style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>You've been signed out</div>
           <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
-            To review a different patient, select one below and relaunch ClaimAuth. In a real hospital deployment, you'd instead click the app icon from inside that patient's chart in your EHR — ClaimAuth can't select a patient on its own.
+            ClaimAuth is running inside the launcher's window, so it can't take you anywhere on its own. Use the launcher's own controls around this window to pick a different patient, then refresh here.
           </p>
-          <a
-            href={LAUNCHER_RETURN_URL}
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
             style={{
               marginTop: '18px',
               display: 'inline-flex',
@@ -867,11 +850,10 @@ export default function App() {
               background: 'linear-gradient(135deg, #4f46e5, #4338ca)',
               color: '#fff',
               boxShadow: '0 14px 22px rgba(79, 70, 229, 0.22)',
-              textDecoration: 'none',
             }}
           >
-            🔄 Select a different patient
-          </a>
+            🔄 Refresh
+          </button>
         </div>
       </div>
     );
