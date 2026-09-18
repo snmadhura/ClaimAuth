@@ -9,6 +9,35 @@ export default function App() {
   const [aiStatus, setAiStatus] = useState('idle');
   const [activeTab, setActiveTab] = useState('copilot');
   const [clinician, setClinician] = useState('Dr. Antonia Stark');
+  const [procedureInfo, setProcedureInfo] = useState({ title: 'requested clinical service', code: 'N/A' });
+
+  const resolveProcedureContext = (serviceRequestData, procedureData) => {
+    const bundles = [serviceRequestData, procedureData].filter(Boolean);
+
+    for (const bundle of bundles) {
+      if (!bundle || !bundle.entry || !Array.isArray(bundle.entry)) {
+        continue;
+      }
+
+      for (const entry of bundle.entry) {
+        const resource = entry && entry.resource;
+        if (!resource) continue;
+
+        const code = resource.code || resource.medicationCodeableConcept || null;
+        const codeText = code && code.text ? code.text : null;
+        const coding = code && Array.isArray(code.coding) && code.coding.length > 0 ? code.coding[0] : null;
+        const display = coding && coding.display ? coding.display : null;
+        const codeValue = coding && coding.code ? coding.code : null;
+        const title = codeText || display || resource.code?.coding?.[0]?.display || 'requested clinical service';
+
+        if (title) {
+          return { title, code: codeValue || 'N/A' };
+        }
+      }
+    }
+
+    return { title: 'requested clinical service', code: 'N/A' };
+  };
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -40,10 +69,12 @@ export default function App() {
         const patientPromise = client.patient.read();
         const coveragePromise = client.request(`Coverage?patient=${client.patient.id}`);
         const practitionerPromise = client.userId ? client.request(client.userId) : Promise.resolve(null);
+        const serviceRequestPromise = client.patient.id ? client.request(`ServiceRequest?patient=${client.patient.id}`) : Promise.resolve(null);
+        const procedurePromise = client.patient.id ? client.request(`Procedure?patient=${client.patient.id}`) : Promise.resolve(null);
 
-        return Promise.all([patientPromise, coveragePromise, practitionerPromise]);
+        return Promise.all([patientPromise, coveragePromise, practitionerPromise, serviceRequestPromise, procedurePromise]);
       })
-      .then(([patientData, coverageData, practitionerData]) => {
+      .then(([patientData, coverageData, practitionerData, serviceRequestData, procedureData]) => {
         let patientName = 'Robert Chen';
 
         if (patientData && patientData.name && Array.isArray(patientData.name) && patientData.name.length > 0) {
@@ -86,7 +117,10 @@ export default function App() {
           realDocName = `${prefixText}${givenText}${familyText ? ` ${familyText}` : ''}`.trim() || 'Active Institutional Provider';
         }
 
+        const resolvedProcedure = resolveProcedureContext(serviceRequestData, procedureData);
+
         setClinician(realDocName || 'Active Institutional Provider');
+        setProcedureInfo(resolvedProcedure);
         setPatient({ name: patientName, dob });
         setInsurance(payerName);
         setLoading(false);
@@ -94,6 +128,7 @@ export default function App() {
       .catch((err) => {
         console.warn('FHIR Framework using fallback parameters:', err);
         setClinician('Active Institutional Provider');
+        setProcedureInfo({ title: 'requested clinical service', code: 'N/A' });
         setPatient({ name: 'Robert Chen', dob: '1978-04-12' });
         setInsurance('Aetna Choice POS II');
         setLoading(false);
@@ -106,8 +141,10 @@ export default function App() {
   };
 
   const patientInitial = patient?.name ? patient.name.charAt(0).toUpperCase() : 'P';
-  const justificationText = `Patient records managed under ${clinician} track ongoing cytopenia criteria. Bone marrow core extraction is essential to exclude underlying myelodysplasia parameters under primary diagnostic profile C92.01.`;
-  const alertBannerText = `${clinician} submitted an order for ${patient?.name || 'the selected patient'} for CPT 38221 (Bone Marrow Biopsy). Payer guidelines mandate clinical approval prior to appointment booking.`;
+  const procedureTitle = procedureInfo.title || 'requested clinical service';
+  const procedureCodeLabel = procedureInfo.code && procedureInfo.code !== 'N/A' ? `CPT ${procedureInfo.code}` : 'requested clinical service';
+  const justificationText = `Patient records managed under ${clinician} track ongoing clinical criteria for ${procedureTitle.toLowerCase()}. This authorization request is evaluated against the active payer policy and patient-specific diagnostic profile.`;
+  const alertBannerText = `${clinician} submitted an order for ${patient?.name || 'the selected patient'} for ${procedureCodeLabel === 'requested clinical service' ? procedureTitle : `${procedureCodeLabel} (${procedureTitle})`}. Payer guidelines mandate clinical approval prior to appointment booking.`;
 
   if (loading) {
     return (
