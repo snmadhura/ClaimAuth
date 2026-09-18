@@ -123,7 +123,7 @@ export default function App() {
 
         return Promise.all([patientPromise, coveragePromise, practitionerPromise, serviceRequestPromise, procedurePromise]);
       })
-      .then(([patientData, coverageData, practitionerData, serviceRequestData, procedureData]) => {
+      .then(([patientData, coverageData, clinicianData, serviceRequestData, procedureData]) => {
         let patientName = 'Selected patient';
 
         if (patientData && patientData.name && Array.isArray(patientData.name) && patientData.name.length > 0) {
@@ -148,7 +148,7 @@ export default function App() {
         const practitionerContext = resolvePractitionerMeta(practitionerData);
         const resolvedProcedure = resolveProcedureContext(serviceRequestData, procedureData);
 
-        setClinician(practitionerContext.name || 'Active Clinical Provider');
+        setClinician(realDocName || practitionerContext.name || 'Active Clinical Provider');
         setSpecialty(practitionerContext.specialty || 'Clinical Care');
         setLocation(practitionerContext.location || 'Care Facility');
         setProcedureInfo(resolvedProcedure);
