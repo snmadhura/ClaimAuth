@@ -159,7 +159,6 @@ export default function App() {
   const [selectedCoverageId, setSelectedCoverageId] = useState(null);
   const [showDemoSecondary, setShowDemoSecondary] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [sessionEnded, setSessionEnded] = useState(false);
   const [activityLog, setActivityLog] = useState([]);
   const [aiStatus, setAiStatus] = useState('idle');
   const [activeTab, setActiveTab] = useState('copilot');
@@ -695,12 +694,13 @@ export default function App() {
 
   // There's no in-app way to switch patients while staying in this SMART
   // session — the EHR grants that context at launch, not the app. The
-  // honest fix is to end the session cleanly and send the user back to
-  // wherever they launch from, so they can pick a different patient/user
-  // and relaunch.
+  // confirm dialog tells the person to make their new selection using the
+  // EHR/launcher's own controls; once they confirm, this clears the local
+  // session and does an actual browser tab refresh (not just an in-app
+  // state reset) so the app reloads clean against whatever they picked.
   const handleRestartSession = () => {
     const confirmed = window.confirm(
-      "This ends your current session. To view a different patient, you'll need to select one using your EHR or the launcher, then refresh. Continue?"
+      "This ends your current session. Before continuing, select a different patient using your EHR or the launcher's own controls — this tab will then refresh. Continue?"
     );
     if (!confirmed) return;
 
@@ -710,7 +710,7 @@ export default function App() {
       console.warn('Could not clear session storage before restarting', err);
     }
 
-    setSessionEnded(true);
+    window.location.reload();
   };
 
   const handleAiPreFill = () => {
@@ -823,41 +823,6 @@ export default function App() {
       { sequence: 1, category: { text: 'Clinical justification' }, valueString: justificationText },
     ],
   });
-
-  if (sessionEnded) {
-    return (
-      <div className="loading-screen" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #eff6ff, #f8fafc)' }}>
-        <div className="loading-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', minWidth: '320px', maxWidth: '360px', background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '22px', padding: '32px 28px', boxShadow: '0 25px 60px rgba(15, 23, 42, 0.08)', textAlign: 'center' }}>
-          <div aria-hidden="true" style={{ fontSize: '32px', marginBottom: '4px' }}>🔒</div>
-          <div className="loading-title" style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>You've been signed out</div>
-          <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
-            ClaimAuth is running inside the launcher's window, so it can't take you anywhere on its own. Use the launcher's own controls around this window to pick a different patient, then refresh here.
-          </p>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            style={{
-              marginTop: '18px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              border: 0,
-              borderRadius: '12px',
-              padding: '11px 18px',
-              fontSize: '13px',
-              fontWeight: 800,
-              cursor: 'pointer',
-              background: 'linear-gradient(135deg, #4f46e5, #4338ca)',
-              color: '#fff',
-              boxShadow: '0 14px 22px rgba(79, 70, 229, 0.22)',
-            }}
-          >
-            🔄 Refresh
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   if (loading) {
     return (
