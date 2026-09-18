@@ -115,11 +115,41 @@ export default function App() {
         };
 
         const practitionerResource = client.userId ? normalizePractitionerRequest(client.userId) : null;
-        const patientPromise = client.patient.read();
-        const coveragePromise = client.request(`Coverage?patient=${client.patient.id}`);
-        const practitionerPromise = practitionerResource ? client.request(practitionerResource).catch(() => null) : Promise.resolve(null);
-        const serviceRequestPromise = client.patient.id ? client.request(`ServiceRequest?patient=${client.patient.id}`) : Promise.resolve(null);
-        const procedurePromise = client.patient.id ? client.request(`Procedure?patient=${client.patient.id}`) : Promise.resolve(null);
+
+        // IMPORTANT: every one of these has its own .catch(). With Promise.all,
+        // a single rejected promise (e.g. Coverage or ServiceRequest returning
+        // a 403/404, which is common when a scope or resource isn't supported)
+        // used to reject the entire batch, jump to the outer .catch(), and wipe
+        // out the patient/practitioner data that *had* loaded successfully.
+        // Now each request fails on its own and just falls back to null.
+        const patientPromise = client.patient.read().catch((err) => {
+          console.warn('FHIR: Patient.read failed', err);
+          return null;
+        });
+        const coveragePromise = client.patient.id
+          ? client.request(`Coverage?patient=${client.patient.id}`).catch((err) => {
+              console.warn('FHIR: Coverage request failed', err);
+              return null;
+            })
+          : Promise.resolve(null);
+        const practitionerPromise = practitionerResource
+          ? client.request(practitionerResource).catch((err) => {
+              console.warn('FHIR: Practitioner request failed', err);
+              return null;
+            })
+          : Promise.resolve(null);
+        const serviceRequestPromise = client.patient.id
+          ? client.request(`ServiceRequest?patient=${client.patient.id}`).catch((err) => {
+              console.warn('FHIR: ServiceRequest request failed', err);
+              return null;
+            })
+          : Promise.resolve(null);
+        const procedurePromise = client.patient.id
+          ? client.request(`Procedure?patient=${client.patient.id}`).catch((err) => {
+              console.warn('FHIR: Procedure request failed', err);
+              return null;
+            })
+          : Promise.resolve(null);
 
         return Promise.all([patientPromise, coveragePromise, practitionerPromise, serviceRequestPromise, procedurePromise]);
       })
@@ -170,7 +200,10 @@ export default function App() {
         setLoading(false);
       })
       .catch((err) => {
-        console.warn('FHIR Framework using fallback parameters:', err);
+        // At this point FHIR.oauth2.ready() itself failed (no valid SMART
+        // session/token) — this is the real "not launched from EHR" case,
+        // not a single sub-resource 404/403 (those are now caught above).
+        console.error('FHIR: oauth2.ready() failed, no SMART session — using fallback parameters:', err);
         setClinician('Dr. Albertine Orn');
         setSpecialty('Clinical Care');
         setLocation('Care Facility');
