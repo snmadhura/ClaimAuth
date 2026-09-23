@@ -820,15 +820,17 @@ export default function App() {
       <div className="claim-panel" style={{ width: '100%', maxWidth: '1400px', height: '92vh', minHeight: '620px', background: 'rgba(255,255,255,0.96)', border: '1px solid #e2e8f0', borderRadius: '24px', boxShadow: '0 18px 42px rgba(15, 23, 42, 0.08), 0 8px 18px rgba(15, 23, 42, 0.04)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <header className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '22px 22px 18px', background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.94))', borderBottom: '1px solid rgba(226, 232, 240, 0.95)' }}>
           <div className="brand-block" style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div className="brand-mark" aria-label="ClaimAuth secure status" style={{ width: '42px', height: '42px', display: 'grid', placeItems: 'center', borderRadius: '12px', background: 'linear-gradient(135deg, #4f46e5, #4338ca)', boxShadow: '0 10px 18px rgba(79, 70, 229, 0.18)' }}>
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ width: '19px', height: '19px', fill: '#ffffff' }}>
-                <path d="M12 2.75l6.75 2.5V11c0 4.08-2.53 7.8-6.75 10.25C7.78 18.8 5.25 15.08 5.25 11V5.25L12 2.75zm-1.4 7.5l-1.35 1.35 2.75 2.75 5.5-5.5L16.6 7.5l-4.25 4.25-1.35-1.35z" />
-              </svg>
-            </div>
+<div className="brand-mark" aria-label="ClaimAuth secure status" style={{ width: '46px', height: '46px', display: 'grid', placeItems: 'center', borderRadius: '14px', background: 'linear-gradient(145deg, #6366f1 0%, #4338ca 58%, #312e81 100%)', boxShadow: '0 12px 24px rgba(67, 56, 202, 0.26)', position: 'relative', overflow: 'hidden' }}>
+  <span aria-hidden="true" style={{ position: 'absolute', inset: '7px', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '10px', transform: 'rotate(45deg)' }} />
+  <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false" style={{ width: '25px', height: '25px', fill: 'none', stroke: '#ffffff', strokeWidth: 2.4, strokeLinecap: 'round', strokeLinejoin: 'round', position: 'relative' }}>
+  <path d="M16 3.5 25 7v7.1c0 5.2-3.4 10-9 12.4-5.6-2.4-9-7.2-9-12.4V7l9-3.5Z" fill="rgba(255,255,255,0.14)" />
+  <path d="m10.8 15.9 3.2 3.2 7.2-7.2" />
+  </svg>
+  </div>
 
             <div className="brand-copy" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <h1 style={{ margin: 0, fontSize: '26px', lineHeight: 1.05, fontWeight: 800, letterSpacing: '-0.06em', color: '#0f172a' }}>
-                Claim<span style={{ color: '#4f46e5' }}>Auth</span>
+<h1 style={{ margin: 0, fontSize: '27px', lineHeight: 1.05, fontWeight: 850, letterSpacing: '-0.065em', color: '#0f172a' }}>
+  Claim<span style={{ color: '#4f46e5' }}>Auth</span>
               </h1>
               <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, letterSpacing: '0.02em', color: '#64748b' }}>Active Provider session: {clinician}</p>
             </div>
