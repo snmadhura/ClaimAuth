@@ -778,13 +778,13 @@ export default function App() {
     created: new Date().toISOString(),
     provider: { display: clinician || 'Requesting provider' },
     priority: { coding: [{ code: 'normal' }] },
-    insurance: [
-      {
-        sequence: 1,
-        focal: true,
-        coverage: { display: insurance || 'Coverage pending' },
-      },
-    ],
+    insurance: coverages.length > 0
+      ? coverages.map((coverage, index) => ({
+          sequence: index + 1,
+          focal: index === 0,
+          coverage: { display: coverage.payerName || 'Coverage pending' },
+        }))
+      : [{ sequence: 1, focal: true, coverage: { display: insurance || 'Coverage pending' } }],
     item: [
       {
         sequence: 1,
@@ -913,17 +913,23 @@ export default function App() {
                 )}
               </div>
               {coverages.length > 1 && (
-                <p style={{ margin: '8px 0 0', fontSize: '10.5px', lineHeight: 1.5, color: '#94a3b8' }}>
-                  This patient has {coverages.length} active coverages. Prior auth is usually needed from {coverages[0].rank.toLowerCase()} first — switching payers here restarts the review for the newly selected one.
-                </p>
+                <div style={{ marginTop: '10px', borderRadius: '12px', background: '#fffbeb', border: '1px solid rgba(245,158,11,0.28)', padding: '10px 11px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px', color: '#92400e', fontSize: '10px', fontWeight: 800, letterSpacing: '0.03em' }}>
+                    <span aria-hidden="true">!</span>
+                    Coordination of benefits
+                  </div>
+                  <p style={{ margin: '5px 0 0', fontSize: '10.5px', lineHeight: 1.5, color: '#92400e' }}>
+                    Start with {coverages[0].payerName} as the primary payer. If it does not cover the service or leaves a balance, the request can be coordinated with the secondary payer. Select a payer below to review its authorization details.
+                  </p>
+                </div>
               )}
               {realCoverages.length === 1 && (
                 <button
                   type="button"
                   onClick={() => setShowDemoSecondary((prev) => !prev)}
-                  style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '5px', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '10.5px', fontWeight: 700, color: '#94a3b8' }}
+                  style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '5px', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '10.5px', fontWeight: 700, color: '#94a3b8', textAlign: 'left' }}
                 >
-                  {showDemoSecondary ? '✕ Remove demo secondary payer' : '🧪 This patient only has one coverage — add a demo secondary payer to test switching'}
+                  {showDemoSecondary ? 'Remove demo secondary payer' : 'Add a clearly labeled demo secondary payer to preview coordination of benefits'}
                 </button>
               )}
             </div>
