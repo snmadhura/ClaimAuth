@@ -247,17 +247,32 @@ export default function App() {
   const [showDemoSecondary, setShowDemoSecondary] = useState(true);
   const [loading, setLoading] = useState(true);
   const [activityLog, setActivityLog] = useState([]);
-  const [aiStatus, setAiStatus] = useState('idle');
+  // Each payer's review progress lives in its own slot here, keyed by
+  // coverage id — { aiStatus, reviewStep, authDetails }. This is what
+  // actually fixes the "switching payers loses my in-progress work" bug:
+  // previously aiStatus/reviewStep/authDetails were single shared
+  // variables, so switching to another payer and back didn't just
+  // interrupt a scan, it silently wiped out anything not yet submitted,
+  // because there was nowhere else for that progress to live.
+  const [reviewStateByPayer, setReviewStateByPayer] = useState({});
   const [showActivityLog, setShowActivityLog] = useState(false);
   const [clinician, setClinician] = useState('Loading provider...');
   const [specialty, setSpecialty] = useState('Loading specialty...');
   const [providerNpi, setProviderNpi] = useState(null);
   const [location, setLocation] = useState('Loading location...');
   const [procedureInfo, setProcedureInfo] = useState({ title: 'requested clinical service', code: 'N/A', requestedDate: null });
-  const [authDetails, setAuthDetails] = useState(null);
   const [clinicalEvidence, setClinicalEvidence] = useState(null);
-  const [reviewStep, setReviewStep] = useState(0);
   const [payloadExpanded, setPayloadExpanded] = useState(false);
+
+  const DEFAULT_REVIEW_STATE = { aiStatus: 'idle', reviewStep: 0, authDetails: null };
+
+  const updateReviewState = (coverageId, patch) => {
+    if (!coverageId) return;
+    setReviewStateByPayer((prev) => ({
+      ...prev,
+      [coverageId]: { ...(prev[coverageId] || DEFAULT_REVIEW_STATE), ...patch },
+    }));
+  };
 
   const formatMoney = (value) => {
     const num = typeof value === 'number' ? value : parseFloat(value);
@@ -788,9 +803,6 @@ export default function App() {
   const handleSelectCoverage = (coverageId) => {
     if (coverageId === selectedCoverageId) return;
     setSelectedCoverageId(coverageId);
-    setAiStatus('idle');
-    setReviewStep(0);
-    setAuthDetails(null);
   };
 
   // Load this patient's local activity log once we know who they are.
@@ -834,11 +846,12 @@ export default function App() {
   };
 
   const handleAiPreFill = () => {
-    setAiStatus('scanning');
+    const targetCoverageId = selectedCoverageId;
+    const targetPayerName = insurance;
+    updateReviewState(targetCoverageId, { aiStatus: 'scanning' });
     setTimeout(() => {
-      setReviewStep(0);
-      setAiStatus('complete');
-      logActivity('AI drafted a justification', { procedure: procedureDisplay, payer: insurance });
+      updateReviewState(targetCoverageId, { aiStatus: 'complete', reviewStep: 0 });
+      logActivity('AI drafted a justification', { procedure: procedureDisplay, payer: targetPayerName });
     }, 2000);
   };
 
@@ -847,20 +860,20 @@ export default function App() {
     const formatDate = (d) => d.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const referenceId = generateAuthorizationNumber();
 
-    setAuthDetails({
-      referenceId,
-      submittedAt: formatDate(submittedAt),
-      status: 'Submitted',
-      payload: buildPasClaimPayload(),
+    updateReviewState(selectedCoverageId, {
+      aiStatus: 'submitted',
+      authDetails: {
+        referenceId,
+        submittedAt: formatDate(submittedAt),
+        status: 'Submitted',
+        payload: buildPasClaimPayload(),
+      },
     });
     logActivity('Submitted prior authorization request (local only)', { procedure: procedureDisplay, referenceId, payer: insurance });
-    setAiStatus('submitted');
   };
 
   const handleCloseSubmission = () => {
-    setAiStatus('idle');
-    setReviewStep(0);
-    setAuthDetails(null);
+    updateReviewState(selectedCoverageId, { aiStatus: 'idle', reviewStep: 0, authDetails: null });
   };
 
   const patientInitial = patient?.name ? patient.name.charAt(0).toUpperCase() : 'R';
@@ -885,6 +898,13 @@ export default function App() {
   }
   const selectedCoverage = coverages.find((c) => c.id === selectedCoverageId) || coverages[0] || null;
   const insurance = selectedCoverage?.payerName || 'Coverage pending';
+  // Derived per-payer, not a single shared variable — this is what lets
+  // each payer's progress (idle / scanning / mid-review / submitted)
+  // persist independently when switching between them.
+  const currentReviewState = reviewStateByPayer[selectedCoverageId] || DEFAULT_REVIEW_STATE;
+  const aiStatus = currentReviewState.aiStatus;
+  const reviewStep = currentReviewState.reviewStep;
+  const authDetails = currentReviewState.authDetails;
   // Reuses the activity log (already tracked per-payer) instead of adding
   // separate state — finds the most recent submission for whichever payer
   // is currently selected, so the idle screen can say so instead of
@@ -1117,13 +1137,15 @@ export default function App() {
                     const isSelected = c.id === selectedCoverageId;
                     const isActiveStatus = (c.status || 'active') === 'active';
                     const wasSubmitted = activityLog.some((entry) => entry.payer === c.payerName && entry.label.startsWith('Submitted'));
+                    const cardReviewState = reviewStateByPayer[c.id] || DEFAULT_REVIEW_STATE;
+                    const isProcessingInBackground = cardReviewState.aiStatus === 'scanning' && !isSelected;
                     return (
                       <button
                         key={c.id}
                         type="button"
                         role="radio"
                         aria-checked={isSelected}
-                        aria-label={`${c.rank} coverage: ${c.payerName}${isSelected ? ', currently selected' : ''}${wasSubmitted ? ', already submitted this session' : ''}`}
+                        aria-label={`${c.rank} coverage: ${c.payerName}${isSelected ? ', currently selected' : ''}${wasSubmitted ? ', already submitted this session' : ''}${isProcessingInBackground ? ', a review is still processing for this payer' : ''}`}
                         onClick={() => handleSelectCoverage(c.id)}
                         style={{
                           display: 'flex',
@@ -1166,6 +1188,9 @@ export default function App() {
                                 )}
                                 {wasSubmitted && (
                                   <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#15803d', background: '#ecfdf5', border: '1px solid rgba(22,163,74,0.18)', borderRadius: '999px', padding: '3px 7px' }}>✓ SUBMITTED</span>
+                                )}
+                                {isProcessingInBackground && (
+                                  <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#7D3F81', background: '#F8F1F9', border: '1px solid rgba(125,63,129,0.2)', borderRadius: '999px', padding: '3px 7px' }}>⏳ PROCESSING</span>
                                 )}
                               </span>
                               <span style={{ fontSize: '9.5px', fontWeight: 800, color: isActiveStatus ? '#15803d' : '#b91c1c' }}>
@@ -1285,9 +1310,34 @@ export default function App() {
 
                   <div style={{ flex: '1', minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   {aiStatus === 'idle' && (
-                    <button type="button" className="primary-button" onClick={handleAiPreFill} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: '#7D3F81', color: '#fff' }}>
-                      Run AI Pre-Fill Engine
-                    </button>
+                    priorSubmissionForCurrentPayer ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        <div style={{ borderRadius: '16px', border: '1px solid rgba(22,163,74,0.18)', background: '#ecfdf5', padding: '16px' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', marginBottom: '8px' }}>✓ Already submitted for this payer</div>
+                          <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#166534', lineHeight: 1.6 }}>
+                            {procedureDisplay} for {patient?.name || 'this patient'} under {insurance} was marked submitted on {new Date(priorSubmissionForCurrentPayer.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.
+                          </p>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
+                            <EOBField label="Local Reference ID" value={priorSubmissionForCurrentPayer.referenceId} />
+                            <EOBField label="Payer" value={insurance} />
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAiPreFill}
+                          style={{ width: '100%', border: '1px solid rgba(125,63,129,0.35)', borderRadius: '12px', padding: '11px 16px', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', background: '#fff', color: '#7D3F81' }}
+                        >
+                          🧪 Restart review (testing only)
+                        </button>
+                        <p style={{ margin: 0, fontSize: '10.5px', lineHeight: 1.5, color: '#94a3b8' }}>
+                          In practice, resubmitting the identical request isn't a normal action — payers flag exact duplicates. A real resubmission happens because the payer denied it, asked for more information, the authorization expired, or more units are needed — none of which this demo tracks. This restarts the review purely so you can test the flow again.
+                        </p>
+                      </div>
+                    ) : (
+                      <button type="button" className="primary-button" onClick={handleAiPreFill} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: '#7D3F81', color: '#fff' }}>
+                        Run AI Pre-Fill Engine
+                      </button>
+                    )
                   )}
 
                   {aiStatus === 'scanning' && (
@@ -1311,7 +1361,7 @@ export default function App() {
                     <div className="assistant-output" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       <div className="success-banner" style={{ background: 'linear-gradient(135deg, #ecfdf5, #f0fdf4)', border: '1px solid rgba(22,163,74,0.18)', color: '#166534', borderRadius: '12px', padding: '10px 12px', fontSize: '12px', fontWeight: 700 }}>✓ Evidence mapped successfully to payer policy and chart criteria.</div>
 
-                      <StepIndicator steps={REVIEW_STEPS} currentIndex={reviewStep} onSelect={setReviewStep} />
+                      <StepIndicator steps={REVIEW_STEPS} currentIndex={reviewStep} onSelect={(step) => updateReviewState(selectedCoverageId, { reviewStep: step })} />
 
                       {reviewStep === 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1464,7 +1514,7 @@ export default function App() {
                     <div style={{ flexShrink: 0, borderTop: '1px solid #e2e8f0', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
                       <button
                         type="button"
-                        onClick={() => setReviewStep((s) => Math.max(0, s - 1))}
+                        onClick={() => updateReviewState(selectedCoverageId, { reviewStep: Math.max(0, reviewStep - 1) })}
                         disabled={reviewStep === 0}
                         style={{ border: '1px solid rgba(226,232,240,1)', borderRadius: '10px', padding: '9px 14px', fontSize: '12px', fontWeight: 700, background: '#fff', color: reviewStep === 0 ? '#cbd5e1' : '#334155', cursor: reviewStep === 0 ? 'not-allowed' : 'pointer' }}
                       >
@@ -1473,7 +1523,7 @@ export default function App() {
                       {reviewStep < REVIEW_STEPS.length - 1 && (
                         <button
                           type="button"
-                          onClick={() => setReviewStep((s) => Math.min(REVIEW_STEPS.length - 1, s + 1))}
+                          onClick={() => updateReviewState(selectedCoverageId, { reviewStep: Math.min(REVIEW_STEPS.length - 1, reviewStep + 1) })}
                           style={{ border: 0, borderRadius: '10px', padding: '9px 16px', fontSize: '12px', fontWeight: 800, background: '#7D3F81', color: '#fff', cursor: 'pointer' }}
                         >
                           Next →
