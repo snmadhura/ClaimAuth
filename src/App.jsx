@@ -310,7 +310,37 @@ export default function App() {
     }));
   };
 
-  const resolveCostBreakdown = (coverageData, eobData, fallbackBilledCharges = 2450) => {
+  // CPT codes are organized into published numeric ranges by category (this
+  // structure is part of the public CPT code system itself, not something
+  // invented here) — Evaluation & Management, Surgery by body system,
+  // Radiology, Pathology & Lab, Medicine, etc. Different categories have
+  // very different typical costs in the real world. This still isn't a
+  // real fee schedule — there's no substitute for one without a live payer
+  // connection — but grounding the estimate in the procedure's actual
+  // category means two different procedures no longer show the identical
+  // dollar figures, and the figure at least sits in a realistic tier for
+  // that kind of service.
+  const estimateBilledChargesForCode = (code) => {
+    const numericCode = code && code !== 'N/A' ? parseInt(code, 10) : NaN;
+    if (Number.isNaN(numericCode)) return 850; // no code on file — general-visit-tier default
+
+    if (numericCode >= 99201 && numericCode <= 99499) return 240; // Evaluation & Management
+    if (numericCode >= 80000 && numericCode <= 89999) return 180; // Pathology & Laboratory
+    if (numericCode >= 70000 && numericCode <= 79999) return 1350; // Radiology / imaging
+    if (numericCode >= 90000 && numericCode <= 99091) return 360; // Medicine (non-E/M)
+    if (numericCode >= 65000 && numericCode <= 69990) return 3200; // Surgery — eye/ear
+    if (numericCode >= 61000 && numericCode <= 64999) return 7400; // Surgery — nervous system
+    if (numericCode >= 56000 && numericCode <= 59999) return 5200; // Surgery — genital/maternity
+    if (numericCode >= 50000 && numericCode <= 55999) return 4600; // Surgery — urinary/male genital
+    if (numericCode >= 42000 && numericCode <= 49999) return 5800; // Surgery — digestive system
+    if (numericCode >= 33000 && numericCode <= 39999) return 9500; // Surgery — cardiovascular/hemic
+    if (numericCode >= 20000 && numericCode <= 29999) return 4400; // Surgery — musculoskeletal
+    if (numericCode >= 10000 && numericCode <= 19999) return 1900; // Surgery — integumentary
+    if (numericCode >= 100 && numericCode <= 1999) return 1250; // Anesthesia
+    return 850; // outside recognized Category I ranges — general default
+  };
+
+  const resolveCostBreakdown = (coverageData, eobData, fallbackBilledCharges = 850) => {
     const round2 = (n) => Math.round(n * 100) / 100;
 
     // 1) An adjudicated ExplanationOfBenefit is the payer's actual line-item
@@ -404,10 +434,13 @@ export default function App() {
     }
 
     // 3) Fallback — a clearly-labeled synthetic estimate so the workspace
-    //    never shows a blank cost panel while data is unavailable.
+    //    never shows a blank cost panel while data is unavailable. Copay
+    //    scales with the (now procedure-category-aware) allowed amount,
+    //    clamped to a realistic band, instead of a flat number that would
+    //    look broken next to a $180 lab test or a $9,500 surgery alike.
     const billedCharges = fallbackBilledCharges;
     const allowedAmount = round2(billedCharges * 0.78);
-    const copayAmount = 150;
+    const copayAmount = Math.min(350, Math.max(25, round2(allowedAmount * 0.1)));
     const deductibleApplied = 0;
     const coinsuranceAmount = 0;
     const patientResponsibility = round2(copayAmount + deductibleApplied + coinsuranceAmount);
@@ -851,7 +884,8 @@ export default function App() {
   const insurance = selectedCoverage?.payerName || 'Coverage pending';
   const costBreakdown = resolveCostBreakdown(
     selectedCoverage?.resource ? { entry: [{ resource: selectedCoverage.resource }] } : null,
-    eobBundle
+    eobBundle,
+    estimateBilledChargesForCode(procedureInfo.code)
   );
 
   // Standard PA data fields, based on the field set most payers' forms are
