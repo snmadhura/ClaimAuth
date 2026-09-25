@@ -4,6 +4,33 @@ import './App.css';
 
 const ACTIVITY_STORAGE_PREFIX = 'claimauth_activity_';
 
+// Same rationale as DEMO_SECONDARY_COVERAGE below, for the other real gap:
+// a patient with ZERO Coverage records at all (confirmed possible — some
+// Synthea patients genuinely have none). Without this, the UI has no demo
+// option to offer at all when coverage is completely empty, which is
+// exactly the "blank during development" problem. Same rule applies: never
+// auto-injected, always an explicit click, always labeled TEST DATA.
+const DEMO_PRIMARY_COVERAGE = {
+  id: 'demo-primary-coverage',
+  payerName: 'Demo Primary Payer (test data)',
+  order: 1,
+  memberId: 'DEMO-PRI-41207',
+  relationship: 'Self',
+  status: 'active',
+  periodStart: '2026-01-01',
+  rank: 'Primary',
+  isDemo: true,
+  resource: {
+    resourceType: 'Coverage',
+    status: 'active',
+    order: 1,
+    subscriberId: 'DEMO-PRI-41207',
+    relationship: { text: 'Self' },
+    period: { start: '2026-01-01' },
+    payor: [{ display: 'Demo Primary Payer (test data)' }],
+  },
+};
+
 // Most Synthea test patients only carry one active Coverage — there's
 // nothing to switch between until you happen to land on a patient with
 // real coordination-of-benefits data. This lets a tester see a clearly-
@@ -61,7 +88,7 @@ const saveActivityLog = (patientKey, entries) => {
 };
 
 const HIGHLIGHT_STYLES = {
-  indigo: { background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid rgba(99,102,241,0.18)', color: '#3730a3' },
+  indigo: { background: 'linear-gradient(135deg, #F8F1F9, #F1E4F2)', border: '1px solid rgba(125,63,129,0.18)', color: '#5C2E60' },
   green: { background: 'linear-gradient(135deg, #ecfdf5, #f0fdf4)', border: '1px solid rgba(34,197,94,0.18)', color: '#166534' },
 };
 
@@ -80,7 +107,7 @@ function EOBField({ label, value, highlight }) {
       }}
     >
       <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>{label}</span>
-      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: highlightStyle ? highlightStyle.color : '#0f172a' }}>{value}</strong>
+      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: highlightStyle ? highlightStyle.color : '#1A111E' }}>{value}</strong>
     </div>
   );
 }
@@ -92,6 +119,33 @@ const EVIDENCE_CATEGORY_META = {
   allergies: { label: 'Allergies', icon: '⚠️' },
 };
 
+function InfoTooltip({ text }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+      <button
+        type="button"
+        onMouseEnter={() => setVisible(true)}
+        onMouseLeave={() => setVisible(false)}
+        onFocus={() => setVisible(true)}
+        onBlur={() => setVisible(false)}
+        aria-label="More information about this step"
+        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', borderRadius: '50%', border: '1px solid rgba(148,163,184,0.5)', background: '#f1f5f9', color: '#64748b', fontSize: '11px', fontWeight: 800, cursor: 'help', padding: 0, lineHeight: 1 }}
+      >
+        i
+      </button>
+      {visible && (
+        <div
+          role="tooltip"
+          style={{ position: 'absolute', top: '24px', right: 0, zIndex: 20, width: '280px', background: '#1A111E', color: '#e2e8f0', fontSize: '11.5px', lineHeight: 1.55, fontWeight: 500, borderRadius: '10px', padding: '10px 12px', boxShadow: '0 4px 12px rgba(26,17,30,0.18)' }}
+        >
+          {text}
+        </div>
+      )}
+    </span>
+  );
+}
+
 function EvidenceCategory({ categoryKey, items }) {
   const meta = EVIDENCE_CATEGORY_META[categoryKey];
   return (
@@ -99,10 +153,10 @@ function EvidenceCategory({ categoryKey, items }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>
         <span aria-hidden="true">{meta.icon}</span>
         <span>{meta.label}</span>
-        <span style={{ color: '#94a3b8', fontWeight: 700 }}>({items.length})</span>
+        <span style={{ color: '#64748b', fontWeight: 700 }}>({items.length})</span>
       </div>
       {items.length === 0 ? (
-        <div style={{ fontSize: '12px', color: '#94a3b8', fontStyle: 'italic', padding: '8px 10px' }}>None on file for this patient.</div>
+        <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic', padding: '8px 10px' }}>None on file for this patient.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {items.map((item) => (
@@ -111,7 +165,7 @@ function EvidenceCategory({ categoryKey, items }) {
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', borderRadius: '10px', background: '#f8fafc', border: '1px solid rgba(226,232,240,1)', padding: '8px 10px' }}
             >
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</div>
+                <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#1A111E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</div>
                 <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '2px' }}>{item.date}{item.status ? ` • ${item.status}` : ''}</div>
               </div>
             </div>
@@ -127,13 +181,13 @@ function FieldRow({ label, value, source }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', borderRadius: '10px', background: '#f8fafc', border: '1px solid rgba(226,232,240,1)', padding: '9px 11px' }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: '9px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>{label}</div>
-        <div style={{ fontSize: '12.5px', fontWeight: 700, color: isMissing ? '#94a3b8' : '#0f172a', fontStyle: isMissing ? 'italic' : 'normal', marginTop: '2px' }}>
+        <div style={{ fontSize: '9px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>{label}</div>
+        <div style={{ fontSize: '12.5px', fontWeight: 700, color: isMissing ? '#64748b' : '#1A111E', fontStyle: isMissing ? 'italic' : 'normal', marginTop: '2px' }}>
           {isMissing ? 'Not on file' : value}
         </div>
       </div>
       {source && !isMissing && (
-        <div style={{ fontSize: '9px', color: '#94a3b8', textAlign: 'right', maxWidth: '170px', lineHeight: 1.4, flexShrink: 0 }}>{source}</div>
+        <div style={{ fontSize: '9px', color: '#64748b', textAlign: 'right', maxWidth: '170px', lineHeight: 1.4, flexShrink: 0 }}>{source}</div>
       )}
     </div>
   );
@@ -168,14 +222,14 @@ function StepIndicator({ steps, currentIndex, onSelect }) {
                   placeItems: 'center',
                   fontSize: '11px',
                   fontWeight: 800,
-                  background: isActive ? '#4338ca' : isDone ? '#e0e7ff' : '#f1f5f9',
-                  color: isActive ? '#fff' : isDone ? '#4338ca' : '#94a3b8',
+                  background: isActive ? '#7D3F81' : isDone ? '#F1E4F2' : '#f1f5f9',
+                  color: isActive ? '#fff' : isDone ? '#7D3F81' : '#64748b',
                   border: isActive ? 'none' : '1px solid rgba(226,232,240,1)',
                 }}
               >
                 {isDone ? '✓' : index + 1}
               </span>
-              <span style={{ fontSize: '11px', fontWeight: isActive ? 800 : 600, color: isActive ? '#0f172a' : '#94a3b8' }}>{step.label}</span>
+              <span style={{ fontSize: '11px', fontWeight: isActive ? 800 : 600, color: isActive ? '#1A111E' : '#64748b' }}>{step.label}</span>
             </button>
             {index < steps.length - 1 && <span style={{ width: '14px', height: '1px', background: 'rgba(203,213,225,0.9)', flexShrink: 0 }} />}
           </React.Fragment>
@@ -787,9 +841,12 @@ export default function App() {
   // payer name and the whole cost breakdown together, with nothing stale
   // left over from the previous payer.
   const realCoverages = resolveCoverageList(coverageBundle);
-  const coverages = showDemoSecondary && realCoverages.length === 1
-    ? [...realCoverages, DEMO_SECONDARY_COVERAGE]
-    : realCoverages;
+  let coverages = realCoverages;
+  if (showDemoSecondary && realCoverages.length === 1) {
+    coverages = [...realCoverages, DEMO_SECONDARY_COVERAGE];
+  } else if (showDemoSecondary && realCoverages.length === 0) {
+    coverages = [DEMO_PRIMARY_COVERAGE, DEMO_SECONDARY_COVERAGE];
+  }
   const selectedCoverage = coverages.find((c) => c.id === selectedCoverageId) || coverages[0] || null;
   const insurance = selectedCoverage?.payerName || 'Coverage pending';
   const costBreakdown = resolveCostBreakdown(
@@ -928,9 +985,9 @@ export default function App() {
   if (loading) {
     return (
       <div className="loading-screen" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #eff6ff, #f8fafc)' }}>
-        <div className="loading-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', minWidth: '320px', background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '22px', padding: '32px 28px', boxShadow: '0 25px 60px rgba(15, 23, 42, 0.08)' }}>
-          <div className="loading-spinner" aria-hidden="true" style={{ width: '38px', height: '38px', borderRadius: '50%', border: '3px solid rgba(79, 70, 229, 0.15)', borderTopColor: '#4f46e5', animation: 'spin 0.9s linear infinite' }} />
-          <div className="loading-title" style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>Syncing ClaimAuth Core...</div>
+        <div className="loading-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', minWidth: '320px', background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '22px', padding: '32px 28px', boxShadow: '0 2px 10px rgba(26,17,30,0.07)' }}>
+          <div className="loading-spinner" aria-hidden="true" style={{ width: '38px', height: '38px', borderRadius: '50%', border: '3px solid rgba(125,63,129,0.15)', borderTopColor: '#7D3F81', animation: 'spin 0.9s linear infinite' }} />
+          <div className="loading-title" style={{ fontSize: '18px', fontWeight: 800, color: '#1A111E', letterSpacing: '-0.03em' }}>Syncing ClaimAuth Core...</div>
           <div className="loading-subtitle" style={{ fontSize: '11px', color: '#64748b', letterSpacing: '0.04em' }}>Establishing secure connection pipeline</div>
         </div>
       </div>
@@ -939,18 +996,18 @@ export default function App() {
 
   return (
     <div className="app-shell" style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', padding: '24px', overflow: 'hidden' }}>
-      <div className="claim-panel" style={{ width: '100%', maxWidth: '1400px', height: '92vh', minHeight: '620px', background: 'rgba(255,255,255,0.96)', border: '1px solid #e2e8f0', borderRadius: '24px', boxShadow: '0 18px 42px rgba(15, 23, 42, 0.08), 0 8px 18px rgba(15, 23, 42, 0.04)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="claim-panel" style={{ width: '100%', maxWidth: '1400px', height: '92vh', minHeight: '620px', background: 'rgba(255,255,255,0.96)', border: '1px solid #e2e8f0', borderRadius: '24px', boxShadow: '0 1px 3px rgba(26,17,30,0.06)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <header className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '22px 22px 18px', background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.94))', borderBottom: '1px solid rgba(226, 232, 240, 0.95)' }}>
           <div className="brand-block" style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div className="brand-mark" aria-label="ClaimAuth secure status" style={{ width: '42px', height: '42px', display: 'grid', placeItems: 'center', borderRadius: '12px', background: 'linear-gradient(135deg, #4f46e5, #4338ca)', boxShadow: '0 10px 18px rgba(79, 70, 229, 0.18)' }}>
+            <div className="brand-mark" aria-label="ClaimAuth secure status" style={{ width: '42px', height: '42px', display: 'grid', placeItems: 'center', borderRadius: '12px', background: '#7D3F81' }}>
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ width: '19px', height: '19px', fill: '#ffffff' }}>
                 <path d="M12 2.75l6.75 2.5V11c0 4.08-2.53 7.8-6.75 10.25C7.78 18.8 5.25 15.08 5.25 11V5.25L12 2.75zm-1.4 7.5l-1.35 1.35 2.75 2.75 5.5-5.5L16.6 7.5l-4.25 4.25-1.35-1.35z" />
               </svg>
             </div>
 
             <div className="brand-copy" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <h1 style={{ margin: 0, fontSize: '26px', lineHeight: 1.05, fontWeight: 800, letterSpacing: '-0.06em', color: '#0f172a' }}>
-                Claim<span style={{ color: '#4f46e5' }}>Auth</span>
+              <h1 style={{ margin: 0, fontSize: '26px', lineHeight: 1.05, fontWeight: 800, letterSpacing: '-0.06em', color: '#1A111E' }}>
+                Claim<span style={{ color: '#7D3F81' }}>Auth</span>
               </h1>
               <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, letterSpacing: '0.02em', color: '#64748b' }}>Active Provider session: {clinician}</p>
             </div>
@@ -974,26 +1031,26 @@ export default function App() {
 
         <div className="workspace-body" style={{ display: 'flex', flexDirection: 'column', flex: '1', minHeight: 0, width: '100%', overflow: 'hidden', borderTop: '1px solid rgba(226,232,240,0.9)' }}>
           <div className="context-strip" style={{ display: 'grid', gridTemplateColumns: '1.3fr 1.1fr 0.9fr', gap: '12px', padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', flexShrink: 0, boxSizing: 'border-box' }}>
-            <div className="context-card-compact" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '14px', padding: '10px 14px', boxShadow: '0 6px 16px rgba(148,163,184,0.08)', minWidth: 0 }}>
-              <div className="patient-avatar" aria-label="Patient initial badge" style={{ width: '38px', height: '38px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #e0e7ff, #c7d2fe)', color: '#312e81', fontSize: '15px', fontWeight: 800, flexShrink: 0 }}>{patientInitial}</div>
+            <div className="context-card-compact" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '14px', padding: '10px 14px', minWidth: 0 }}>
+              <div className="patient-avatar" aria-hidden="true" style={{ width: '38px', height: '38px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #F1E4F2, #E3C6E6)', color: '#4A2350', fontSize: '15px', fontWeight: 800, flexShrink: 0 }}>{patientInitial}</div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '8.5px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Patient</div>
-                <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{patient?.name || 'Robert Chen'}</div>
+                <div style={{ fontSize: '8.5px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Patient</div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#1A111E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{patient?.name || 'Robert Chen'}</div>
                 <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>DOB: {patient?.dob || '1978-04-12'}</div>
               </div>
             </div>
 
-            <div className="context-card-compact" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '14px', padding: '10px 14px', boxShadow: '0 6px 16px rgba(148,163,184,0.08)', minWidth: 0 }}>
-              <div style={{ width: '34px', height: '34px', display: 'grid', placeItems: 'center', borderRadius: '11px', background: 'linear-gradient(135deg, #e0e7ff, #c7d2fe)', color: '#312e81', fontWeight: 800, fontSize: '14px', flexShrink: 0 }}>{clinician ? clinician.charAt(0).toUpperCase() : 'D'}</div>
+            <div className="context-card-compact" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '14px', padding: '10px 14px', minWidth: 0 }}>
+              <div aria-hidden="true" style={{ width: '34px', height: '34px', display: 'grid', placeItems: 'center', borderRadius: '11px', background: 'linear-gradient(135deg, #F1E4F2, #E3C6E6)', color: '#4A2350', fontWeight: 800, fontSize: '14px', flexShrink: 0 }}>{clinician ? clinician.charAt(0).toUpperCase() : 'D'}</div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '8.5px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Provider</div>
-                <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clinician}</div>
+                <div style={{ fontSize: '8.5px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Provider</div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#1A111E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clinician}</div>
                 <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{specialty} • {location}</div>
               </div>
             </div>
 
-            <div className="context-card-compact" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '6px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '14px', padding: '10px 14px', boxShadow: '0 6px 16px rgba(148,163,184,0.08)', minWidth: 0 }}>
-              <div style={{ fontSize: '8.5px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Verification</div>
+            <div className="context-card-compact" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '6px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '14px', padding: '10px 14px', minWidth: 0 }}>
+              <div style={{ fontSize: '8.5px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Verification</div>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#ecfdf5', color: '#15803d', border: '1px solid rgba(22,163,74,0.15)', padding: '4px 8px', fontSize: '10px', fontWeight: 800 }}>Coverage Verified</span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#fef3c7', color: '#b45309', border: '1px solid rgba(251,191,36,0.2)', padding: '4px 8px', fontSize: '10px', fontWeight: 800 }}>Priority High</span>
@@ -1004,12 +1061,12 @@ export default function App() {
           <div style={{ display: 'flex', flex: '1', minHeight: 0, overflow: 'hidden' }}>
               <div className="workspace-columns" style={{ display: 'grid', gridTemplateColumns: 'minmax(380px, 42%) minmax(420px, 58%)', width: '100%', minHeight: 0 }}>
                 <div className="left-column" style={{ overflowY: 'auto', padding: '24px', borderRight: '1px solid #e2e8f0', background: 'linear-gradient(180deg, rgba(255,255,255,0.78), rgba(248,250,252,0.94))', display: 'flex', flexDirection: 'column', gap: '18px', minWidth: 0, minHeight: 0, boxSizing: 'border-box' }}>
-                  <div className="alert-banner" style={{ background: 'linear-gradient(135deg, #fff7ed, #fffbeb)', border: '1px solid rgba(251, 191, 36, 0.2)', color: '#7c2d12', borderRadius: '16px', padding: '16px 15px', fontSize: '14.5px', lineHeight: 1.6, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5)' }}>
+                  <div className="alert-banner" style={{ background: 'linear-gradient(135deg, #fff7ed, #fffbeb)', border: '1px solid rgba(251, 191, 36, 0.2)', color: '#7c2d12', borderRadius: '16px', padding: '16px 15px', fontSize: '14.5px', lineHeight: 1.6 }}>
                     <div className="alert-title" style={{ marginBottom: '6px', fontWeight: 800, color: '#b45309' }}>⚡ Intercepted Missing Authorization</div>
                     {alertBannerText}
                   </div>
 
-                  <div className="context-card" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(248,250,252,0.96))', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '18px', padding: '18px', boxShadow: '0 12px 26px rgba(148, 163, 184, 0.08)' }}>
+                  <div className="context-card" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(248,250,252,0.96))', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '18px', padding: '18px' }}>
                     <div className="section-label" style={{ marginBottom: '10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748b', fontWeight: 800 }}>Coverage & Payer</div>
               <div role="radiogroup" aria-label="Select which coverage to review" style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {coverages.length > 0 ? (
@@ -1032,9 +1089,9 @@ export default function App() {
                           borderRadius: '14px',
                           padding: '12px 14px',
                           cursor: 'pointer',
-                          background: isSelected ? 'linear-gradient(135deg, #eef2ff, #e0e7ff)' : '#f8fafc',
+                          background: isSelected ? 'linear-gradient(135deg, #F8F1F9, #F1E4F2)' : '#f8fafc',
                           border: isSelected
-                            ? '1.5px solid rgba(99,102,241,0.4)'
+                            ? '1.5px solid rgba(125,63,129,0.4)'
                             : c.isDemo
                               ? '1px dashed rgba(148,163,184,0.6)'
                               : '1px solid rgba(226,232,240,1)',
@@ -1042,7 +1099,7 @@ export default function App() {
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '9px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 800, color: isSelected ? '#4338ca' : '#64748b', background: isSelected ? 'rgba(255,255,255,0.7)' : '#e2e8f0', borderRadius: '999px', padding: '3px 8px' }}>
+                            <span style={{ fontSize: '9px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 800, color: isSelected ? '#7D3F81' : '#64748b', background: isSelected ? 'rgba(255,255,255,0.7)' : '#e2e8f0', borderRadius: '999px', padding: '3px 8px' }}>
                               {c.rank}
                             </span>
                             {c.isDemo && (
@@ -1053,19 +1110,19 @@ export default function App() {
                             ● {isActiveStatus ? 'Active' : (c.status || 'Inactive')}
                           </span>
                         </div>
-                        <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>{c.payerName}</div>
+                        <div style={{ fontSize: '14px', fontWeight: 800, color: '#1A111E' }}>{c.payerName}</div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 14px', fontSize: '10.5px', color: '#64748b' }}>
                           <span>Member ID: <strong style={{ color: '#334155' }}>{c.memberId || 'Not on file'}</strong></span>
                           <span>Relationship: <strong style={{ color: '#334155' }}>{c.relationship || 'Not specified'}</strong></span>
                         </div>
                         {isSelected && (
-                          <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#4338ca' }}>✓ Currently reviewing this payer</span>
+                          <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#7D3F81' }}>✓ Currently reviewing this payer</span>
                         )}
                       </button>
                     );
                   })
                 ) : (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#f1f5f9', color: '#94a3b8', border: '1px solid rgba(226,232,240,1)', padding: '7px 10px', fontSize: '11px', fontWeight: 700 }}>Coverage pending</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#f1f5f9', color: '#64748b', border: '1px solid rgba(226,232,240,1)', padding: '7px 10px', fontSize: '11px', fontWeight: 700 }}>Coverage pending</span>
                 )}
               </div>
               {coverages.length > 1 && (
@@ -1077,30 +1134,34 @@ export default function App() {
                   </p>
                 </div>
               )}
-              {realCoverages.length === 1 && (
+              {realCoverages.length <= 1 && (
                 <button
                   type="button"
                   onClick={() => setShowDemoSecondary((prev) => !prev)}
-                  style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '5px', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '10.5px', fontWeight: 700, color: '#94a3b8' }}
+                  style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '5px', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '10.5px', fontWeight: 700, color: '#64748b' }}
                 >
-                  {showDemoSecondary ? '✕ Remove demo secondary payer' : '🧪 This patient only has one coverage — add a demo secondary payer to test switching'}
+                  {showDemoSecondary
+                    ? '✕ Remove demo coverage'
+                    : realCoverages.length === 0
+                      ? '🧪 This patient has no coverage on file — add demo coverage to test the UI'
+                      : '🧪 This patient only has one coverage — add a demo secondary payer to test switching'}
                 </button>
               )}
             </div>
 
-                  <section className="cost-analysis-banner" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.94))', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '18px', boxShadow: '0 12px 26px rgba(148, 163, 184, 0.08)', overflow: 'hidden' }}>
+                  <section className="cost-analysis-banner" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.94))', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '18px', overflow: 'hidden' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', width: '100%' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px 14px', borderRight: '1px solid rgba(226,232,240,0.8)', borderBottom: '1px solid rgba(226,232,240,0.8)', minHeight: '90px' }}>
                       <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Target Code</span>
-                      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#0f172a' }}>{procedureDisplay}</strong>
+                      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#1A111E' }}>{procedureDisplay}</strong>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px 14px', borderBottom: '1px solid rgba(226,232,240,0.8)', minHeight: '90px' }}>
                       <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Approval Scope</span>
-                      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#0f172a' }}>{insurance} policy review • clinical necessity evaluation</strong>
+                      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#1A111E' }}>{insurance} policy review • clinical necessity evaluation</strong>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px 14px', borderRight: '1px solid rgba(226,232,240,0.8)', minHeight: '90px' }}>
                       <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Contracted / Allowed Amount</span>
-                      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#0f172a' }}>{formatMoney(costBreakdown?.allowedAmount)}</strong>
+                      <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#1A111E' }}>{formatMoney(costBreakdown?.allowedAmount)}</strong>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px 14px', minHeight: '90px', background: 'linear-gradient(135deg, #ecfdf5, #f0fdf4)' }}>
                       <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Patient Financial Responsibility</span>
@@ -1109,9 +1170,9 @@ export default function App() {
                   </div>
                 </section>
 
-                <section className="cost-breakdown-panel" style={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(226,232,240,0.95)', borderRadius: '18px', padding: '18px', boxShadow: '0 12px 26px rgba(148, 163, 184, 0.08)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <section className="cost-breakdown-panel" style={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(226,232,240,0.95)', borderRadius: '18px', padding: '18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-                    <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Cost & Benefits Breakdown</h3>
+                    <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Cost & Benefits Breakdown</h3>
                     <span
                       style={{
                         display: 'inline-flex',
@@ -1147,27 +1208,27 @@ export default function App() {
 
                 <div className="right-column" style={{ overflowY: 'auto', padding: '24px', background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(248,250,252,0.96))', display: 'flex', flexDirection: 'column', gap: '18px', minWidth: 0, minHeight: 0, boxSizing: 'border-box' }}>
 
-                <section className="assistant-panel" style={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(226, 232, 240, 0.95)', borderRadius: '18px', padding: '16px', boxShadow: '0 12px 28px rgba(148, 163, 184, 0.08)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>ClaimAuth Assistant</h3>
+                <section className="assistant-panel" style={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(226, 232, 240, 0.95)', borderRadius: '18px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>ClaimAuth Assistant</h3>
 
                   {aiStatus === 'idle' && (
-                    <button type="button" className="primary-button" onClick={handleAiPreFill} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: 'linear-gradient(135deg, #4f46e5, #4338ca)', color: '#fff', boxShadow: '0 16px 24px rgba(79, 70, 229, 0.22)' }}>
+                    <button type="button" className="primary-button" onClick={handleAiPreFill} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: '#7D3F81', color: '#fff' }}>
                       Run AI Pre-Fill Engine
                     </button>
                   )}
 
                   {aiStatus === 'scanning' && (
-                    <div className="loading-inline loading-inline--stacked" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', gap: '10px', minHeight: 0, padding: '8px 0', color: '#4338ca', fontWeight: 700, fontSize: '13px' }}>
-                      <div className="scan-log-row" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(148,163,184,0.18)', borderRadius: '10px', padding: '10px 12px', color: '#1e293b', fontSize: '12px', lineHeight: 1.5, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
-                        <span className="inline-spinner" style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(79, 70, 229, 0.15)', borderTopColor: '#4f46e5', animation: 'spin 0.9s linear infinite' }} />
+                    <div className="loading-inline loading-inline--stacked" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', gap: '10px', minHeight: 0, padding: '8px 0', color: '#7D3F81', fontWeight: 700, fontSize: '13px' }}>
+                      <div className="scan-log-row" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(148,163,184,0.18)', borderRadius: '10px', padding: '10px 12px', color: '#1A111E', fontSize: '12px', lineHeight: 1.5, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
+                        <span className="inline-spinner" style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(125,63,129,0.15)', borderTopColor: '#7D3F81', animation: 'spin 0.9s linear infinite' }} />
                         <span>🔍 [STEP 1/3] Cross-checking payer policy and clinical necessity for {procedureDisplay}...</span>
                       </div>
-                      <div className="scan-log-row" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(148,163,184,0.18)', borderRadius: '10px', padding: '10px 12px', color: '#1e293b', fontSize: '12px', lineHeight: 1.5, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
-                        <span className="inline-spinner inline-spinner--small" style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid rgba(79, 70, 229, 0.15)', borderTopColor: '#4f46e5', animation: 'spin 0.9s linear infinite' }} />
+                      <div className="scan-log-row" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(148,163,184,0.18)', borderRadius: '10px', padding: '10px 12px', color: '#1A111E', fontSize: '12px', lineHeight: 1.5, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
+                        <span className="inline-spinner inline-spinner--small" style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid rgba(125,63,129,0.15)', borderTopColor: '#7D3F81', animation: 'spin 0.9s linear infinite' }} />
                         <span>⚖️ [STEP 2/3] Reviewing chart context and care decision support for {patient?.name || 'the selected patient'}...</span>
                       </div>
-                      <div className="scan-log-row" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(148,163,184,0.18)', borderRadius: '10px', padding: '10px 12px', color: '#1e293b', fontSize: '12px', lineHeight: 1.5, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
-                        <span className="inline-spinner inline-spinner--small" style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid rgba(79, 70, 229, 0.15)', borderTopColor: '#4f46e5', animation: 'spin 0.9s linear infinite' }} />
+                      <div className="scan-log-row" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(148,163,184,0.18)', borderRadius: '10px', padding: '10px 12px', color: '#1A111E', fontSize: '12px', lineHeight: 1.5, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
+                        <span className="inline-spinner inline-spinner--small" style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid rgba(125,63,129,0.15)', borderTopColor: '#7D3F81', animation: 'spin 0.9s linear infinite' }} />
                         <span>⏳ [STEP 3/3] Preparing authorization payload for secure transmission...</span>
                       </div>
                     </div>
@@ -1181,9 +1242,10 @@ export default function App() {
 
                       {reviewStep === 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                          <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
-                            These are the standard prior-authorization data fields — based on the X12 278 transaction set most payers' forms are built around, not this specific payer's actual form, since none is connected here. Each value shows exactly where it came from; anything missing says so instead of being filled in.
-                          </p>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Standard PA Data Fields</span>
+                            <InfoTooltip text="These are the standard prior-authorization data fields — based on the X12 278 transaction set most payers' forms are built around, not this specific payer's actual form, since none is connected here. Each value shows exactly where it came from; anything missing says so instead of being filled in." />
+                          </div>
                           {requestFieldSections.map((section) => (
                             <div key={section.title} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                               <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>{section.title}</div>
@@ -1199,14 +1261,14 @@ export default function App() {
 
                       {reviewStep === 1 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                          <div className="checklist-panel" style={{ background: 'linear-gradient(135deg, #f8fafc, #edf2ff)', border: '1px solid rgba(165,180,252,0.2)', borderRadius: '14px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div className="checklist-title" style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#4338ca', fontWeight: 800 }}>Payer Guideline Criteria Validation Checklist</div>
-                            <div className="checklist-row" style={{ fontSize: '12px', lineHeight: 1.6, color: '#0f172a' }}>• Requested service aligns with documented clinical intent ──► [ PASS ]</div>
-                            <div className="checklist-row" style={{ fontSize: '12px', lineHeight: 1.6, color: '#0f172a' }}>• Prior authorization criteria and network constraints reviewed ──► [ PASS ]</div>
+                          <div className="checklist-panel" style={{ background: 'linear-gradient(135deg, #f8fafc, #edf2ff)', border: '1px solid rgba(125,63,129,0.2)', borderRadius: '14px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div className="checklist-title" style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#7D3F81', fontWeight: 800 }}>Payer Guideline Criteria Validation Checklist</div>
+                            <div className="checklist-row" style={{ fontSize: '12px', lineHeight: 1.6, color: '#1A111E' }}>• Requested service aligns with documented clinical intent ──► [ PASS ]</div>
+                            <div className="checklist-row" style={{ fontSize: '12px', lineHeight: 1.6, color: '#1A111E' }}>• Prior authorization criteria and network constraints reviewed ──► [ PASS ]</div>
                           </div>
 
                           <div className="field-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <label style={{ fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Generated Justification Summary</label>
+                            <label style={{ fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Generated Justification Summary</label>
                             <div
                               role="textbox"
                               aria-readonly="true"
@@ -1220,9 +1282,10 @@ export default function App() {
 
                       {reviewStep === 2 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                          <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
-                            These are the structured chart entries the AI checked before drafting the justification — not a summary of a clinical note, since none is on file for this patient in this system. Verify against the chart before submitting.
-                          </p>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Clinical Evidence Reviewed</span>
+                            <InfoTooltip text="These are the structured chart entries the AI checked before drafting the justification — not a summary of a clinical note, since none is on file for this patient in this system. Verify against the chart before submitting." />
+                          </div>
                           {clinicalEvidence ? (
                             <>
                               <EvidenceCategory categoryKey="conditions" items={clinicalEvidence.conditions} />
@@ -1231,7 +1294,7 @@ export default function App() {
                               <EvidenceCategory categoryKey="allergies" items={clinicalEvidence.allergies} />
                             </>
                           ) : (
-                            <div style={{ fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' }}>Loading chart evidence...</div>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>Loading chart evidence...</div>
                           )}
                         </div>
                       )}
@@ -1249,7 +1312,7 @@ export default function App() {
                             <EOBField label="Estimated Patient Responsibility" value={formatMoney(costBreakdown?.patientResponsibility)} highlight="green" />
                             <EOBField label="Estimated Plan Payment" value={formatMoney(costBreakdown?.planPaid)} highlight="indigo" />
                           </div>
-                          <button type="button" className="inverse-button" onClick={handleSubmit} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: 'linear-gradient(135deg, #0f172a, #1e293b)', color: '#fff', boxShadow: '0 14px 22px rgba(15,23,42,0.2)' }}>
+                          <button type="button" className="inverse-button" onClick={handleSubmit} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: '#7D3F81', color: '#fff' }}>
                             Submit Prior Authorization Request
                           </button>
                           <div className="transmission-note" style={{ fontSize: '12px', lineHeight: 1.6, color: '#475569', padding: '0 2px' }}>{transmissionSubtitle}</div>
@@ -1257,13 +1320,13 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => setPayloadExpanded((prev) => !prev)}
-                            style={{ display: 'flex', alignItems: 'center', gap: '6px', border: 0, background: 'transparent', padding: '2px 0', cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: '#94a3b8', alignSelf: 'flex-start' }}
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', border: 0, background: 'transparent', padding: '2px 0', cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: '#64748b', alignSelf: 'flex-start' }}
                             aria-expanded={payloadExpanded}
                           >
                             {payloadExpanded ? '▲' : '▼'} Technical details (FHIR payload, for IT/audit — not needed to submit)
                           </button>
                           {payloadExpanded && (
-                            <pre style={{ margin: 0, maxHeight: '260px', overflow: 'auto', background: '#0f172a', color: '#c7d2fe', borderRadius: '10px', padding: '14px', fontSize: '11px', lineHeight: 1.6, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
+                            <pre style={{ margin: 0, maxHeight: '260px', overflow: 'auto', background: '#1A111E', color: '#E3C6E6', borderRadius: '10px', padding: '14px', fontSize: '11px', lineHeight: 1.6, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
                               {JSON.stringify(buildPasClaimPayload(), null, 2)}
                             </pre>
                           )}
@@ -1283,7 +1346,7 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => setReviewStep((s) => Math.min(REVIEW_STEPS.length - 1, s + 1))}
-                            style={{ border: 0, borderRadius: '10px', padding: '9px 16px', fontSize: '12px', fontWeight: 800, background: 'linear-gradient(135deg, #4f46e5, #4338ca)', color: '#fff', cursor: 'pointer' }}
+                            style={{ border: 0, borderRadius: '10px', padding: '9px 16px', fontSize: '12px', fontWeight: 800, background: '#7D3F81', color: '#fff', cursor: 'pointer' }}
                           >
                             Next →
                           </button>
@@ -1294,17 +1357,17 @@ export default function App() {
 
                   {aiStatus === 'submitted' && authDetails && (
                     <>
-                      <div className="dispatch-card" style={{ background: 'linear-gradient(135deg, #1f1b5e, #312e81)', border: '1px solid rgba(165,180,252,0.2)', borderRadius: '16px', padding: '18px 16px', textAlign: 'center', color: '#fff' }}>
-                        <div className="dispatch-title" style={{ marginBottom: '10px', fontSize: '15px', fontWeight: 800, color: '#c7d2fe' }}>✅ Request Submitted</div>
+                      <div className="dispatch-card" style={{ background: '#1A111E', border: '1px solid rgba(125,63,129,0.2)', borderRadius: '16px', padding: '18px 16px', textAlign: 'center', color: '#fff' }}>
+                        <div className="dispatch-title" style={{ marginBottom: '10px', fontSize: '15px', fontWeight: 800, color: '#E3C6E6' }}>✅ Request Submitted</div>
                         <p style={{ margin: 0, color: '#bfdbfe', fontSize: '12px', fontWeight: 600 }}>{submittedStatusText}</p>
-                        <div className="dispatch-id" style={{ marginTop: '14px', borderRadius: '10px', background: 'rgba(15,23,42,0.2)', border: '1px solid rgba(165,180,252,0.2)', color: '#c7d2fe', fontSize: '11px', letterSpacing: '0.08em', padding: '10px 12px', fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>Local reference: {authDetails.referenceId}</div>
+                        <div className="dispatch-id" style={{ marginTop: '14px', borderRadius: '10px', background: 'rgba(15,23,42,0.2)', border: '1px solid rgba(125,63,129,0.2)', color: '#E3C6E6', fontSize: '11px', letterSpacing: '0.08em', padding: '10px 12px', fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>Local reference: {authDetails.referenceId}</div>
                       </div>
 
-                      <div className="eob-card" style={{ background: '#ffffff', border: '1px solid rgba(226,232,240,0.95)', borderRadius: '18px', padding: '20px', boxShadow: '0 12px 28px rgba(148, 163, 184, 0.08)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div className="eob-card" style={{ background: '#ffffff', border: '1px solid rgba(226,232,240,0.95)', borderRadius: '18px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', borderBottom: '1px solid rgba(226,232,240,0.9)', paddingBottom: '14px' }}>
                           <div>
-                            <div style={{ fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800, marginBottom: '4px' }}>Prior Authorization</div>
-                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>Request Summary</h3>
+                            <div style={{ fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800, marginBottom: '4px' }}>Prior Authorization</div>
+                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#1A111E', letterSpacing: '-0.03em' }}>Request Summary</h3>
                           </div>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '999px', padding: '7px 12px', fontSize: '11px', fontWeight: 800, background: '#ecfdf5', color: '#15803d', border: '1px solid rgba(22,163,74,0.18)' }}>
                             ✓ {authDetails.status}
@@ -1323,7 +1386,7 @@ export default function App() {
 
                         <div style={{ borderTop: '1px dashed rgba(148,163,184,0.4)', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Requested Service</span>
-                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{procedureDisplay}</div>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#1A111E' }}>{procedureDisplay}</div>
                         </div>
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', borderTop: '1px dashed rgba(148,163,184,0.4)', paddingTop: '14px' }}>
@@ -1359,12 +1422,12 @@ export default function App() {
               aria-modal="true"
               aria-label="Local activity log"
               onClick={(e) => e.stopPropagation()}
-              style={{ background: '#fff', borderRadius: '20px', maxWidth: '560px', width: '100%', maxHeight: '80vh', overflowY: 'auto', padding: '22px', boxShadow: '0 30px 60px rgba(15,23,42,0.25)', boxSizing: 'border-box' }}
+              style={{ background: '#fff', borderRadius: '20px', maxWidth: '560px', width: '100%', maxHeight: '80vh', overflowY: 'auto', padding: '22px', boxShadow: '0 8px 24px rgba(26,17,30,0.18)', boxSizing: 'border-box' }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', marginBottom: '16px' }}>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>Local Activity Log</h3>
-                  <p style={{ margin: '6px 0 0', fontSize: '11.5px', lineHeight: 1.5, color: '#94a3b8', maxWidth: '420px' }}>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#1A111E' }}>Local Activity Log</h3>
+                  <p style={{ margin: '6px 0 0', fontSize: '11.5px', lineHeight: 1.5, color: '#64748b', maxWidth: '420px' }}>
                     Recorded on this device only, for {patient?.name || 'this patient'}. Not synced with your EHR, a clearinghouse, or any payer — there's no live connection for it to sync to.
                     {!patient?.id && ' No stable patient ID was available from this launch, so this session\u2019s entries won\u2019t be saved after you reload — that\u2019s intentional, to avoid mixing up patients who share a name.'}
                   </p>
@@ -1383,14 +1446,14 @@ export default function App() {
                 <button
                   type="button"
                   onClick={clearActivityLog}
-                  style={{ display: 'block', marginBottom: '14px', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textDecoration: 'underline' }}
+                  style={{ display: 'block', marginBottom: '14px', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: '#64748b', textDecoration: 'underline' }}
                 >
                   Clear log
                 </button>
               )}
 
               {activityLog.length === 0 ? (
-                <div style={{ fontSize: '12.5px', color: '#94a3b8', fontStyle: 'italic', padding: '8px 2px' }}>
+                <div style={{ fontSize: '12.5px', color: '#64748b', fontStyle: 'italic', padding: '8px 2px' }}>
                   No activity recorded yet for this patient. Actions like drafting a justification or submitting a request will show up here.
                 </div>
               ) : (
@@ -1398,7 +1461,7 @@ export default function App() {
                   {activityLog.map((entry) => (
                     <div key={entry.id} className="log-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 12px', borderRadius: '14px', border: '1px solid rgba(226,232,240,1)', background: '#f8fafc' }}>
                       <div style={{ minWidth: 0 }}>
-                        <div className="log-title" style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{entry.label}</div>
+                        <div className="log-title" style={{ fontSize: '13px', fontWeight: 800, color: '#1A111E' }}>{entry.label}</div>
                         <div className="log-meta" style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
                           {new Date(entry.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                           {entry.procedure ? ` • ${entry.procedure}` : ''}
