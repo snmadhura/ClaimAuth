@@ -1031,19 +1031,19 @@ export default function App() {
   return (
     <div className="app-shell" style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', padding: '24px', overflow: 'hidden' }}>
       <div className="claim-panel" style={{ width: '100%', maxWidth: '1400px', height: '92vh', minHeight: '620px', background: 'rgba(255,255,255,0.96)', border: '1px solid #e2e8f0', borderRadius: '24px', boxShadow: '0 1px 3px rgba(26,17,30,0.06)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <header className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '22px 22px 18px', background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.94))', borderBottom: '1px solid rgba(226, 232, 240, 0.95)' }}>
-          <div className="brand-block" style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div className="brand-mark" aria-label="ClaimAuth secure status" style={{ width: '42px', height: '42px', display: 'grid', placeItems: 'center', borderRadius: '12px', background: '#7D3F81' }}>
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ width: '19px', height: '19px', fill: '#ffffff' }}>
+        <header className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '12px 22px 10px', background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.94))', borderBottom: '1px solid rgba(226, 232, 240, 0.95)' }}>
+          <div className="brand-block" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div className="brand-mark" aria-label="ClaimAuth secure status" style={{ width: '30px', height: '30px', display: 'grid', placeItems: 'center', borderRadius: '9px', background: '#7D3F81' }}>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ width: '15px', height: '15px', fill: '#ffffff' }}>
                 <path d="M12 2.75l6.75 2.5V11c0 4.08-2.53 7.8-6.75 10.25C7.78 18.8 5.25 15.08 5.25 11V5.25L12 2.75zm-1.4 7.5l-1.35 1.35 2.75 2.75 5.5-5.5L16.6 7.5l-4.25 4.25-1.35-1.35z" />
               </svg>
             </div>
 
-            <div className="brand-copy" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <h1 style={{ margin: 0, fontSize: '26px', lineHeight: 1.05, fontWeight: 800, letterSpacing: '-0.06em', color: '#1A111E' }}>
+            <div className="brand-copy" style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+              <h1 style={{ margin: 0, fontSize: '18px', lineHeight: 1.1, fontWeight: 800, letterSpacing: '-0.04em', color: '#1A111E' }}>
                 Claim<span style={{ color: '#7D3F81' }}>Auth</span>
               </h1>
-              <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, letterSpacing: '0.02em', color: '#64748b' }}>Active Provider session: {clinician}</p>
+              <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, letterSpacing: '0.02em', color: '#64748b' }}>Active Provider session: {clinician}</p>
             </div>
           </div>
 
@@ -1064,30 +1064,30 @@ export default function App() {
         </header>
 
         <div className="workspace-body" style={{ display: 'flex', flexDirection: 'column', flex: '1', minHeight: 0, width: '100%', overflow: 'hidden', borderTop: '1px solid rgba(226,232,240,0.9)' }}>
-          <div className="context-strip" style={{ display: 'grid', gridTemplateColumns: '1.3fr 1.1fr 0.9fr', gap: '12px', padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', flexShrink: 0, boxSizing: 'border-box' }}>
-            <div className="context-card-compact" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '14px', padding: '10px 14px', minWidth: 0 }}>
-              <div className="patient-avatar" aria-hidden="true" style={{ width: '38px', height: '38px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #F1E4F2, #E3C6E6)', color: '#4A2350', fontSize: '15px', fontWeight: 800, flexShrink: 0 }}>{patientInitial}</div>
+          <div className="context-strip" style={{ display: 'grid', gridTemplateColumns: '1.3fr 1.1fr 0.9fr', gap: '10px', padding: '10px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', flexShrink: 0, boxSizing: 'border-box' }}>
+            <div className="context-card-compact" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '12px', padding: '7px 12px', minWidth: 0 }}>
+              <div className="patient-avatar" aria-hidden="true" style={{ width: '30px', height: '30px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #F1E4F2, #E3C6E6)', color: '#4A2350', fontSize: '12.5px', fontWeight: 800, flexShrink: 0 }}>{patientInitial}</div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '8.5px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Patient</div>
-                <div style={{ fontSize: '14px', fontWeight: 800, color: '#1A111E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{patient?.name || 'Robert Chen'}</div>
-                <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>DOB: {patient?.dob || '1978-04-12'}</div>
+                <div style={{ fontSize: '8px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Patient</div>
+                <div style={{ fontSize: '13px', fontWeight: 800, color: '#1A111E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{patient?.name || 'Robert Chen'}</div>
+                <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>DOB: {patient?.dob || '1978-04-12'}</div>
               </div>
             </div>
 
-            <div className="context-card-compact" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '14px', padding: '10px 14px', minWidth: 0 }}>
-              <div aria-hidden="true" style={{ width: '34px', height: '34px', display: 'grid', placeItems: 'center', borderRadius: '11px', background: 'linear-gradient(135deg, #F1E4F2, #E3C6E6)', color: '#4A2350', fontWeight: 800, fontSize: '14px', flexShrink: 0 }}>{clinician ? clinician.charAt(0).toUpperCase() : 'D'}</div>
+            <div className="context-card-compact" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '12px', padding: '7px 12px', minWidth: 0 }}>
+              <div aria-hidden="true" style={{ width: '28px', height: '28px', display: 'grid', placeItems: 'center', borderRadius: '9px', background: 'linear-gradient(135deg, #F1E4F2, #E3C6E6)', color: '#4A2350', fontWeight: 800, fontSize: '12px', flexShrink: 0 }}>{clinician ? clinician.charAt(0).toUpperCase() : 'D'}</div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '8.5px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Provider</div>
-                <div style={{ fontSize: '14px', fontWeight: 800, color: '#1A111E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clinician}</div>
-                <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{specialty} • {location}</div>
+                <div style={{ fontSize: '8px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Provider</div>
+                <div style={{ fontSize: '13px', fontWeight: 800, color: '#1A111E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clinician}</div>
+                <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{specialty} • {location}</div>
               </div>
             </div>
 
-            <div className="context-card-compact" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '6px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '14px', padding: '10px 14px', minWidth: 0 }}>
-              <div style={{ fontSize: '8.5px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Verification</div>
+            <div className="context-card-compact" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '5px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '12px', padding: '7px 12px', minWidth: 0 }}>
+              <div style={{ fontSize: '8px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Verification</div>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#ecfdf5', color: '#15803d', border: '1px solid rgba(22,163,74,0.15)', padding: '4px 8px', fontSize: '10px', fontWeight: 800 }}>Coverage Verified</span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#fef3c7', color: '#b45309', border: '1px solid rgba(251,191,36,0.2)', padding: '4px 8px', fontSize: '10px', fontWeight: 800 }}>Priority High</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#ecfdf5', color: '#15803d', border: '1px solid rgba(22,163,74,0.15)', padding: '3px 7px', fontSize: '9.5px', fontWeight: 800 }}>Coverage Verified</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#fef3c7', color: '#b45309', border: '1px solid rgba(251,191,36,0.2)', padding: '3px 7px', fontSize: '9.5px', fontWeight: 800 }}>Priority High</span>
               </div>
             </div>
           </div>
@@ -1107,13 +1107,14 @@ export default function App() {
                   coverages.map((c) => {
                     const isSelected = c.id === selectedCoverageId;
                     const isActiveStatus = (c.status || 'active') === 'active';
+                    const wasSubmitted = activityLog.some((entry) => entry.payer === c.payerName && entry.label.startsWith('Submitted'));
                     return (
                       <button
                         key={c.id}
                         type="button"
                         role="radio"
                         aria-checked={isSelected}
-                        aria-label={`${c.rank} coverage: ${c.payerName}${isSelected ? ', currently selected' : ''}`}
+                        aria-label={`${c.rank} coverage: ${c.payerName}${isSelected ? ', currently selected' : ''}${wasSubmitted ? ', already submitted this session' : ''}`}
                         onClick={() => handleSelectCoverage(c.id)}
                         style={{
                           display: 'flex',
@@ -1138,6 +1139,9 @@ export default function App() {
                             </span>
                             {c.isDemo && (
                               <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#b45309', background: '#fef3c7', borderRadius: '999px', padding: '3px 7px' }}>TEST DATA</span>
+                            )}
+                            {wasSubmitted && (
+                              <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#15803d', background: '#ecfdf5', border: '1px solid rgba(22,163,74,0.18)', borderRadius: '999px', padding: '3px 7px' }}>✓ SUBMITTED</span>
                             )}
                           </span>
                           <span style={{ fontSize: '9.5px', fontWeight: 800, color: isActiveStatus ? '#15803d' : '#b91c1c' }}>
@@ -1240,11 +1244,12 @@ export default function App() {
                 </section>
                 </div>
 
-                <div className="right-column" style={{ overflowY: 'auto', padding: '24px', background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(248,250,252,0.96))', display: 'flex', flexDirection: 'column', gap: '18px', minWidth: 0, minHeight: 0, boxSizing: 'border-box' }}>
+                <div className="right-column" style={{ overflow: 'hidden', padding: '24px', background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(248,250,252,0.96))', display: 'flex', flexDirection: 'column', gap: '18px', minWidth: 0, minHeight: 0, boxSizing: 'border-box' }}>
 
-                <section className="assistant-panel" style={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(226, 232, 240, 0.95)', borderRadius: '18px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>ClaimAuth Assistant</h3>
+                <section className="assistant-panel" style={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(226, 232, 240, 0.95)', borderRadius: '18px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', flex: '1', minHeight: 0, overflow: 'hidden' }}>
+                  <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800, flexShrink: 0 }}>ClaimAuth Assistant</h3>
 
+                  <div style={{ flex: '1', minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   {aiStatus === 'idle' && (
                     <button type="button" className="primary-button" onClick={handleAiPreFill} style={{ width: '100%', border: 0, borderRadius: '12px', padding: '13px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: '#7D3F81', color: '#fff' }}>
                       Run AI Pre-Fill Engine
@@ -1366,26 +1371,6 @@ export default function App() {
                           )}
                         </div>
                       )}
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
-                        <button
-                          type="button"
-                          onClick={() => setReviewStep((s) => Math.max(0, s - 1))}
-                          disabled={reviewStep === 0}
-                          style={{ border: '1px solid rgba(226,232,240,1)', borderRadius: '10px', padding: '9px 14px', fontSize: '12px', fontWeight: 700, background: '#fff', color: reviewStep === 0 ? '#cbd5e1' : '#334155', cursor: reviewStep === 0 ? 'not-allowed' : 'pointer' }}
-                        >
-                          ← Back
-                        </button>
-                        {reviewStep < REVIEW_STEPS.length - 1 && (
-                          <button
-                            type="button"
-                            onClick={() => setReviewStep((s) => Math.min(REVIEW_STEPS.length - 1, s + 1))}
-                            style={{ border: 0, borderRadius: '10px', padding: '9px 16px', fontSize: '12px', fontWeight: 800, background: '#7D3F81', color: '#fff', cursor: 'pointer' }}
-                          >
-                            Next →
-                          </button>
-                        )}
-                      </div>
                     </div>
                   )}
 
@@ -1438,6 +1423,29 @@ export default function App() {
                         </button>
                       </div>
                     </>
+                  )}
+                  </div>
+
+                  {aiStatus === 'complete' && (
+                    <div style={{ flexShrink: 0, borderTop: '1px solid #e2e8f0', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setReviewStep((s) => Math.max(0, s - 1))}
+                        disabled={reviewStep === 0}
+                        style={{ border: '1px solid rgba(226,232,240,1)', borderRadius: '10px', padding: '9px 14px', fontSize: '12px', fontWeight: 700, background: '#fff', color: reviewStep === 0 ? '#cbd5e1' : '#334155', cursor: reviewStep === 0 ? 'not-allowed' : 'pointer' }}
+                      >
+                        ← Back
+                      </button>
+                      {reviewStep < REVIEW_STEPS.length - 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setReviewStep((s) => Math.min(REVIEW_STEPS.length - 1, s + 1))}
+                          style={{ border: 0, borderRadius: '10px', padding: '9px 16px', fontSize: '12px', fontWeight: 800, background: '#7D3F81', color: '#fff', cursor: 'pointer' }}
+                        >
+                          Next →
+                        </button>
+                      )}
+                    </div>
                   )}
                 </section>
                 </div>
