@@ -6,18 +6,33 @@ const ACTIVITY_STORAGE_PREFIX = 'claimauth_activity_';
 
 // Most Synthea test patients only carry one active Coverage — there's
 // nothing to switch between until you happen to land on a patient with
-// real coordination-of-benefits data. This lets a tester add a clearly-
+// real coordination-of-benefits data. This lets a tester see a clearly-
 // labeled synthetic second payer to demo the multi-coverage picker without
 // needing a specific patient. It's never fetched from FHIR and never mixed
-// into anything treated as real chart data.
+// into anything treated as real chart data. On by default, since COB is a
+// common-enough real scenario that the demo should show it out of the box
+// rather than requiring an extra click to discover — but it only ever
+// activates when the real patient has exactly one coverage, so it never
+// overrides or hides real coordination-of-benefits data when present.
 const DEMO_SECONDARY_COVERAGE = {
   id: 'demo-secondary-coverage',
   payerName: 'Demo Secondary Payer (test data)',
   order: 2,
-  relationship: null,
+  memberId: 'DEMO-SEC-88214',
+  relationship: 'Self',
+  status: 'active',
+  periodStart: '2026-01-01',
   rank: 'Secondary',
   isDemo: true,
-  resource: { resourceType: 'Coverage', status: 'active', order: 2, payor: [{ display: 'Demo Secondary Payer (test data)' }] },
+  resource: {
+    resourceType: 'Coverage',
+    status: 'active',
+    order: 2,
+    subscriberId: 'DEMO-SEC-88214',
+    relationship: { text: 'Self' },
+    period: { start: '2026-01-01' },
+    payor: [{ display: 'Demo Secondary Payer (test data)' }],
+  },
 };
 
 // This log lives only in this browser's localStorage, keyed per patient.
@@ -107,7 +122,25 @@ function EvidenceCategory({ categoryKey, items }) {
   );
 }
 
+function FieldRow({ label, value, source }) {
+  const isMissing = value === null || value === undefined || value === '';
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', borderRadius: '10px', background: '#f8fafc', border: '1px solid rgba(226,232,240,1)', padding: '9px 11px' }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: '9px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>{label}</div>
+        <div style={{ fontSize: '12.5px', fontWeight: 700, color: isMissing ? '#94a3b8' : '#0f172a', fontStyle: isMissing ? 'italic' : 'normal', marginTop: '2px' }}>
+          {isMissing ? 'Not on file' : value}
+        </div>
+      </div>
+      {source && !isMissing && (
+        <div style={{ fontSize: '9px', color: '#94a3b8', textAlign: 'right', maxWidth: '170px', lineHeight: 1.4, flexShrink: 0 }}>{source}</div>
+      )}
+    </div>
+  );
+}
+
 const REVIEW_STEPS = [
+  { key: 'fields', label: 'Request Fields' },
   { key: 'justification', label: 'Justification' },
   { key: 'evidence', label: 'Evidence' },
   { key: 'submit', label: 'Submit' },
@@ -157,15 +190,16 @@ export default function App() {
   const [coverageBundle, setCoverageBundle] = useState(null);
   const [eobBundle, setEobBundle] = useState(null);
   const [selectedCoverageId, setSelectedCoverageId] = useState(null);
-  const [showDemoSecondary, setShowDemoSecondary] = useState(false);
+  const [showDemoSecondary, setShowDemoSecondary] = useState(true);
   const [loading, setLoading] = useState(true);
   const [activityLog, setActivityLog] = useState([]);
   const [aiStatus, setAiStatus] = useState('idle');
-  const [activeTab, setActiveTab] = useState('copilot');
+  const [showActivityLog, setShowActivityLog] = useState(false);
   const [clinician, setClinician] = useState('Loading provider...');
   const [specialty, setSpecialty] = useState('Loading specialty...');
+  const [providerNpi, setProviderNpi] = useState(null);
   const [location, setLocation] = useState('Loading location...');
-  const [procedureInfo, setProcedureInfo] = useState({ title: 'requested clinical service', code: 'N/A' });
+  const [procedureInfo, setProcedureInfo] = useState({ title: 'requested clinical service', code: 'N/A', requestedDate: null });
   const [authDetails, setAuthDetails] = useState(null);
   const [clinicalEvidence, setClinicalEvidence] = useState(null);
   const [reviewStep, setReviewStep] = useState(0);
@@ -205,6 +239,9 @@ export default function App() {
         payerName: (Array.isArray(r.payor) && r.payor.length > 0 && (r.payor[0].display || r.payor[0].reference)) || 'Unknown payer',
         order: typeof r.order === 'number' ? r.order : null,
         relationship: (r.relationship && (r.relationship.text || (r.relationship.coding && r.relationship.coding[0] && r.relationship.coding[0].display))) || null,
+        memberId: r.subscriberId || (Array.isArray(r.identifier) && r.identifier.length > 0 && (r.identifier[0].value || null)) || null,
+        status: r.status || 'active',
+        periodStart: (r.period && r.period.start) || null,
         resource: r,
       }));
 
@@ -352,14 +389,21 @@ export default function App() {
         const display = coding && coding.display ? coding.display : null;
         const codeValue = coding && coding.code ? coding.code : null;
         const title = codeText || display || resource.code?.coding?.[0]?.display || 'requested clinical service';
+        const requestedDate =
+          resource.authoredOn ||
+          resource.occurrenceDateTime ||
+          (resource.occurrencePeriod && resource.occurrencePeriod.start) ||
+          resource.performedDateTime ||
+          (resource.performedPeriod && resource.performedPeriod.start) ||
+          null;
 
         if (title) {
-          return { title, code: codeValue || 'N/A' };
+          return { title, code: codeValue || 'N/A', requestedDate };
         }
       }
     }
 
-    return { title: 'requested clinical service', code: 'N/A' };
+    return { title: 'requested clinical service', code: 'N/A', requestedDate: null };
   };
 
   const resolvePractitionerMeta = (practitionerData) => {
@@ -434,6 +478,7 @@ export default function App() {
     const conditions = mapEntries(conditionData, (r) => ({
       id: r.id || `${r.resourceType}-${Math.random()}`,
       label: codeableConceptText(r.code) || 'Documented condition',
+      code: (r.code && Array.isArray(r.code.coding) && r.code.coding.length > 0 && r.code.coding[0].code) || null,
       date: formatEvidenceDate(r.onsetDateTime || (r.onsetPeriod && r.onsetPeriod.start) || r.recordedDate),
       status: (r.clinicalStatus && codeableConceptText(r.clinicalStatus)) || null,
     })).slice(0, 5);
@@ -603,10 +648,15 @@ export default function App() {
         const practitionerContext = resolvePractitionerMeta(clinicianData);
         const resolvedProcedure = resolveProcedureContext(serviceRequestData, procedureData);
         const resolvedEvidence = resolveClinicalEvidence(conditionData, medicationData, allergyData, procedureData);
+        const npiValue =
+          clinicianData && Array.isArray(clinicianData.identifier)
+            ? (clinicianData.identifier.find((id) => id && id.system && /us-npi/i.test(id.system))?.value || null)
+            : null;
 
         setClinician(realDocName || practitionerContext.name || 'Active Clinical Provider');
         setSpecialty(practitionerContext.specialty || 'Clinical Care');
         setLocation(practitionerContext.location || 'Care Facility');
+        setProviderNpi(npiValue);
         setProcedureInfo(resolvedProcedure);
         setPatient({ name: patientName, dob, id: patientData?.id || null });
         setCoverageBundle(coverageData);
@@ -622,7 +672,8 @@ export default function App() {
         setClinician('Dr. Albertine Orn');
         setSpecialty('Clinical Care');
         setLocation('Care Facility');
-        setProcedureInfo({ title: 'requested clinical service', code: 'N/A' });
+        setProviderNpi(null);
+        setProcedureInfo({ title: 'requested clinical service', code: 'N/A', requestedDate: null });
         setPatient({ name: 'Selected patient', dob: 'Unknown DOB' });
         setCoverageBundle(null);
         setEobBundle(null);
@@ -746,6 +797,60 @@ export default function App() {
     eobBundle
   );
 
+  // Standard PA data fields, based on the field set most payers' forms are
+  // built around (the X12 278 transaction) — not this specific payer's
+  // actual form, since none is connected here. Every value is either real
+  // (pulled from an already-fetched FHIR resource, with that resource
+  // named as its source) or explicitly "Not on file" — nothing here is
+  // invented to fill a gap.
+  const primaryDiagnosis = clinicalEvidence?.conditions?.[0] || null;
+  const requestFieldSections = [
+    {
+      title: 'Patient',
+      fields: [
+        { label: 'Patient Name', value: patient?.name, source: 'Patient.name' },
+        { label: 'Date of Birth', value: patient?.dob, source: 'Patient.birthDate' },
+        { label: 'Member ID', value: selectedCoverage?.memberId, source: 'Coverage.subscriberId' },
+      ],
+    },
+    {
+      title: 'Payer',
+      fields: [
+        { label: 'Plan / Payer Name', value: insurance, source: 'Coverage.payor' },
+        { label: 'Coverage Order', value: selectedCoverage?.rank, source: 'Coverage.order' },
+        { label: 'Relationship to Subscriber', value: selectedCoverage?.relationship, source: 'Coverage.relationship' },
+      ],
+    },
+    {
+      title: 'Requesting Provider',
+      fields: [
+        { label: 'Provider Name', value: clinician, source: 'Practitioner.name' },
+        { label: 'NPI', value: providerNpi, source: 'Practitioner.identifier (NPI)' },
+        { label: 'Specialty', value: specialty, source: 'Practitioner.specialty' },
+        { label: 'Practice Location', value: location, source: 'Practitioner.address' },
+      ],
+    },
+    {
+      title: 'Requested Service',
+      fields: [
+        { label: 'Procedure / CPT Code', value: procedureInfo.code && procedureInfo.code !== 'N/A' ? procedureInfo.code : null, source: 'ServiceRequest/Procedure.code' },
+        { label: 'Description', value: procedureInfo.title, source: 'ServiceRequest/Procedure.code.text' },
+        { label: 'Requested Date', value: procedureInfo.requestedDate ? formatEvidenceDate(procedureInfo.requestedDate) : null, source: 'ServiceRequest.authoredOn / Procedure.performed' },
+      ],
+    },
+    {
+      title: 'Diagnosis',
+      fields: [
+        {
+          label: 'Primary Diagnosis',
+          value: primaryDiagnosis?.label,
+          source: primaryDiagnosis ? 'Condition.code — most recent on chart, not confirmed linked to this specific request' : null,
+        },
+        { label: 'Diagnosis Code', value: primaryDiagnosis?.code, source: primaryDiagnosis ? 'Condition.code.coding' : null },
+      ],
+    },
+  ];
+
   const justificationText = `${patient?.name || 'Robert Chen'} is being managed under ${clinician}'s active care plan. The authorization review focuses on ${procedureDisplay}, using documented chart history, clinical necessity, and payer policy alignment to support treatment continuity and appropriate utilization. This determination reflects the least-burdensome clinically appropriate care pathway and is framed for coverage review based on the selected patient context.`;
   // Same content as justificationText, but with the three things a
   // clinician scanning this actually needs to double-check — who the
@@ -778,13 +883,30 @@ export default function App() {
     created: new Date().toISOString(),
     provider: { display: clinician || 'Requesting provider' },
     priority: { coding: [{ code: 'normal' }] },
-    insurance: [
-      {
-        sequence: 1,
-        focal: true,
-        coverage: { display: insurance || 'Coverage pending' },
-      },
-    ],
+    // Every active coverage is listed here, sequenced by the verified
+    // Coverage.order (Primary = 1, Secondary = 2, ...) — not by which one
+    // the admin currently has selected to review. `focal` marks the
+    // primary specifically, per this project's convention: it stays fixed
+    // to the primary even when this Claim is being prepared to submit to
+    // the secondary payer's PAS endpoint. (Note for anyone extending this:
+    // real-world X12/FHIR coordination-of-benefits claims more often mark
+    // whichever coverage is actually being billed in that transaction as
+    // focal, with others listed as non-focal context — this app follows
+    // the simpler "primary is always focal" rule by design, not because
+    // that's universally how payers expect it.)
+    insurance: coverages.length > 0
+      ? coverages.map((c, index) => ({
+          sequence: index + 1,
+          focal: c.rank === 'Primary',
+          coverage: { display: c.payerName },
+        }))
+      : [
+          {
+            sequence: 1,
+            focal: true,
+            coverage: { display: insurance || 'Coverage pending' },
+          },
+        ],
     item: [
       {
         sequence: 1,
@@ -834,75 +956,111 @@ export default function App() {
             </div>
           </div>
 
-          <div className="status-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '999px', background: 'linear-gradient(135deg, #ecfdf5, #f0fdf4)', border: '1px solid rgba(34, 197, 94, 0.18)', color: '#15803d', fontSize: '11px', fontWeight: 700 }}>
-            <span className="status-dot" style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 0 4px rgba(34, 197, 94, 0.14)' }} />
-            FHIR Secure
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              type="button"
+              onClick={() => setShowActivityLog(true)}
+              aria-haspopup="dialog"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', borderRadius: '999px', background: '#f8fafc', border: '1px solid rgba(226,232,240,1)', color: '#475569', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+            >
+              🕓 Activity Log
+            </button>
+            <div className="status-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '999px', background: 'linear-gradient(135deg, #ecfdf5, #f0fdf4)', border: '1px solid rgba(34, 197, 94, 0.18)', color: '#15803d', fontSize: '11px', fontWeight: 700 }}>
+              <span className="status-dot" style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 0 4px rgba(34, 197, 94, 0.14)' }} />
+              FHIR Secure
+            </div>
           </div>
         </header>
 
-        <nav className="segmented-tabs" aria-label="Workspace tabs" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', margin: '16px 18px 0', padding: '6px', borderRadius: '16px', background: '#f8fafc', border: '1px solid rgba(226,232,240,0.9)' }}>
-          <button
-            type="button"
-            className={activeTab === 'copilot' ? 'tab-button active' : 'tab-button'}
-            onClick={() => setActiveTab('copilot')}
-            style={{ border: 0, background: activeTab === 'copilot' ? '#ffffff' : 'transparent', color: activeTab === 'copilot' ? '#4338ca' : '#64748b', borderRadius: '12px', padding: '10px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', boxShadow: activeTab === 'copilot' ? '0 8px 18px rgba(79, 70, 229, 0.12)' : 'none', transition: 'all 0.2s ease' }}
-          >
-            AI Co-Pilot
-          </button>
-          <button
-            type="button"
-            className={activeTab === 'logs' ? 'tab-button active' : 'tab-button'}
-            onClick={() => setActiveTab('logs')}
-            style={{ border: 0, background: activeTab === 'logs' ? '#ffffff' : 'transparent', color: activeTab === 'logs' ? '#4338ca' : '#64748b', borderRadius: '12px', padding: '10px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', boxShadow: activeTab === 'logs' ? '0 8px 18px rgba(79, 70, 229, 0.12)' : 'none', transition: 'all 0.2s ease' }}
-          >
-            Audit Logs
-          </button>
-        </nav>
-
-        <div className="workspace-body" style={{ display: 'flex', flex: '1', minHeight: 0, width: '100%', overflow: 'hidden', borderTop: '1px solid rgba(226,232,240,0.9)' }}>
-          <aside className="clinical-context-hub" style={{ width: '350px', minWidth: '350px', borderRight: '1px solid #e2e8f0', height: '100%', overflowY: 'auto', padding: '20px', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box' }}>
-            <div className="context-card" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(248,250,252,0.96))', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '18px', padding: '18px', boxShadow: '0 12px 26px rgba(148, 163, 184, 0.08)' }}>
-              <div className="section-label" style={{ marginBottom: '10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748b', fontWeight: 800 }}>Active Patient Stream</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div className="patient-avatar" aria-label="Patient initial badge" style={{ width: '50px', height: '50px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #e0e7ff, #c7d2fe)', color: '#312e81', border: '2px solid rgba(255,255,255,0.9)', boxShadow: '0 12px 20px rgba(79, 70, 229, 0.12)', fontSize: '22px', fontWeight: 800 }}>{patientInitial}</div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.04em', margin: 0 }}>{patient?.name || 'Robert Chen'}</div>
-                  <div style={{ marginTop: '4px', fontSize: '13px', color: '#64748b', fontWeight: 600 }}>DOB: {patient?.dob || '1978-04-12'}</div>
-                </div>
+        <div className="workspace-body" style={{ display: 'flex', flexDirection: 'column', flex: '1', minHeight: 0, width: '100%', overflow: 'hidden', borderTop: '1px solid rgba(226,232,240,0.9)' }}>
+          <div className="context-strip" style={{ display: 'grid', gridTemplateColumns: '1.3fr 1.1fr 0.9fr', gap: '12px', padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', flexShrink: 0, boxSizing: 'border-box' }}>
+            <div className="context-card-compact" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '14px', padding: '10px 14px', boxShadow: '0 6px 16px rgba(148,163,184,0.08)', minWidth: 0 }}>
+              <div className="patient-avatar" aria-label="Patient initial badge" style={{ width: '38px', height: '38px', borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #e0e7ff, #c7d2fe)', color: '#312e81', fontSize: '15px', fontWeight: 800, flexShrink: 0 }}>{patientInitial}</div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '8.5px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Patient</div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{patient?.name || 'Robert Chen'}</div>
+                <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>DOB: {patient?.dob || '1978-04-12'}</div>
               </div>
-              <div style={{ marginTop: '14px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            </div>
+
+            <div className="context-card-compact" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '14px', padding: '10px 14px', boxShadow: '0 6px 16px rgba(148,163,184,0.08)', minWidth: 0 }}>
+              <div style={{ width: '34px', height: '34px', display: 'grid', placeItems: 'center', borderRadius: '11px', background: 'linear-gradient(135deg, #e0e7ff, #c7d2fe)', color: '#312e81', fontWeight: 800, fontSize: '14px', flexShrink: 0 }}>{clinician ? clinician.charAt(0).toUpperCase() : 'D'}</div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '8.5px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Provider</div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clinician}</div>
+                <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{specialty} • {location}</div>
+              </div>
+            </div>
+
+            <div className="context-card-compact" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '6px', background: '#fff', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '14px', padding: '10px 14px', boxShadow: '0 6px 16px rgba(148,163,184,0.08)', minWidth: 0 }}>
+              <div style={{ fontSize: '8.5px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Verification</div>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#ecfdf5', color: '#15803d', border: '1px solid rgba(22,163,74,0.15)', padding: '4px 8px', fontSize: '10px', fontWeight: 800 }}>Coverage Verified</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#fef3c7', color: '#b45309', border: '1px solid rgba(251,191,36,0.2)', padding: '4px 8px', fontSize: '10px', fontWeight: 800 }}>Priority High</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flex: '1', minHeight: 0, overflow: 'hidden' }}>
+              <div className="workspace-columns" style={{ display: 'grid', gridTemplateColumns: 'minmax(380px, 42%) minmax(420px, 58%)', width: '100%', minHeight: 0 }}>
+                <div className="left-column" style={{ overflowY: 'auto', padding: '24px', borderRight: '1px solid #e2e8f0', background: 'linear-gradient(180deg, rgba(255,255,255,0.78), rgba(248,250,252,0.94))', display: 'flex', flexDirection: 'column', gap: '18px', minWidth: 0, minHeight: 0, boxSizing: 'border-box' }}>
+                  <div className="alert-banner" style={{ background: 'linear-gradient(135deg, #fff7ed, #fffbeb)', border: '1px solid rgba(251, 191, 36, 0.2)', color: '#7c2d12', borderRadius: '16px', padding: '16px 15px', fontSize: '14.5px', lineHeight: 1.6, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5)' }}>
+                    <div className="alert-title" style={{ marginBottom: '6px', fontWeight: 800, color: '#b45309' }}>⚡ Intercepted Missing Authorization</div>
+                    {alertBannerText}
+                  </div>
+
+                  <div className="context-card" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(248,250,252,0.96))', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '18px', padding: '18px', boxShadow: '0 12px 26px rgba(148, 163, 184, 0.08)' }}>
+                    <div className="section-label" style={{ marginBottom: '10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748b', fontWeight: 800 }}>Coverage & Payer</div>
+              <div role="radiogroup" aria-label="Select which coverage to review" style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {coverages.length > 0 ? (
                   coverages.map((c) => {
                     const isSelected = c.id === selectedCoverageId;
+                    const isActiveStatus = (c.status || 'active') === 'active';
                     return (
                       <button
                         key={c.id}
                         type="button"
+                        role="radio"
+                        aria-checked={isSelected}
+                        aria-label={`${c.rank} coverage: ${c.payerName}${isSelected ? ', currently selected' : ''}`}
                         onClick={() => handleSelectCoverage(c.id)}
-                        title={c.isDemo ? 'Synthetic test data — not from this patient\u2019s real chart' : (c.relationship ? `Relationship: ${c.relationship}` : undefined)}
                         style={{
-                          display: 'inline-flex',
+                          display: 'flex',
                           flexDirection: 'column',
-                          alignItems: 'flex-start',
-                          gap: '2px',
-                          borderRadius: '12px',
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 700,
+                          gap: '6px',
+                          textAlign: 'left',
+                          borderRadius: '14px',
+                          padding: '12px 14px',
                           cursor: 'pointer',
                           background: isSelected ? 'linear-gradient(135deg, #eef2ff, #e0e7ff)' : '#f8fafc',
-                          color: isSelected ? '#4338ca' : '#64748b',
                           border: isSelected
-                            ? '1px solid rgba(99,102,241,0.3)'
+                            ? '1.5px solid rgba(99,102,241,0.4)'
                             : c.isDemo
                               ? '1px dashed rgba(148,163,184,0.6)'
                               : '1px solid rgba(226,232,240,1)',
                         }}
                       >
-                        <span style={{ fontSize: '8.5px', letterSpacing: '0.06em', textTransform: 'uppercase', opacity: 0.75 }}>
-                          {c.rank}{c.isDemo ? ' • TEST DATA' : ''}{isSelected ? ' • active' : ''}
-                        </span>
-                        <span>{c.payerName}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '9px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 800, color: isSelected ? '#4338ca' : '#64748b', background: isSelected ? 'rgba(255,255,255,0.7)' : '#e2e8f0', borderRadius: '999px', padding: '3px 8px' }}>
+                              {c.rank}
+                            </span>
+                            {c.isDemo && (
+                              <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#b45309', background: '#fef3c7', borderRadius: '999px', padding: '3px 7px' }}>TEST DATA</span>
+                            )}
+                          </span>
+                          <span style={{ fontSize: '9.5px', fontWeight: 800, color: isActiveStatus ? '#15803d' : '#b91c1c' }}>
+                            ● {isActiveStatus ? 'Active' : (c.status || 'Inactive')}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>{c.payerName}</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 14px', fontSize: '10.5px', color: '#64748b' }}>
+                          <span>Member ID: <strong style={{ color: '#334155' }}>{c.memberId || 'Not on file'}</strong></span>
+                          <span>Relationship: <strong style={{ color: '#334155' }}>{c.relationship || 'Not specified'}</strong></span>
+                        </div>
+                        {isSelected && (
+                          <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#4338ca' }}>✓ Currently reviewing this payer</span>
+                        )}
                       </button>
                     );
                   })
@@ -911,9 +1069,13 @@ export default function App() {
                 )}
               </div>
               {coverages.length > 1 && (
-                <p style={{ margin: '8px 0 0', fontSize: '10.5px', lineHeight: 1.5, color: '#94a3b8' }}>
-                  This patient has {coverages.length} active coverages. Prior auth is usually needed from {coverages[0].rank.toLowerCase()} first — switching payers here restarts the review for the newly selected one.
-                </p>
+                <div style={{ marginTop: '10px', borderRadius: '12px', background: '#f8fafc', border: '1px solid rgba(226,232,240,1)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '9.5px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 800, color: '#64748b' }}>ℹ️ Coordination of Benefits</span>
+                  <p style={{ margin: 0, fontSize: '10.5px', lineHeight: 1.55, color: '#64748b' }}>
+                    This patient has {coverages.length} active coverages. The {coverages[0].rank.toLowerCase()} payer is billed first
+                    {coverages[1] ? `; the ${coverages[1].rank.toLowerCase()} is only used after the primary responds or the remaining patient balance is known` : ''} — never before. This order comes from verified eligibility/EHR data, not a guess, and can't be reordered here. Selecting a card above only changes which payer you're reviewing — it restarts the current review, since the justification, cost breakdown, and payload are all payer-specific.
+                  </p>
+                </div>
               )}
               {realCoverages.length === 1 && (
                 <button
@@ -926,51 +1088,13 @@ export default function App() {
               )}
             </div>
 
-            <div className="context-card" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(248,250,252,0.96))', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '18px', padding: '18px', boxShadow: '0 12px 26px rgba(148, 163, 184, 0.08)' }}>
-              <div className="section-label" style={{ marginBottom: '10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748b', fontWeight: 800 }}>Active Clinician Summary</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ width: '44px', height: '44px', display: 'grid', placeItems: 'center', borderRadius: '14px', background: 'linear-gradient(135deg, #e0e7ff, #c7d2fe)', color: '#312e81', fontWeight: 800, fontSize: '20px', boxShadow: '0 12px 22px rgba(79, 70, 229, 0.12)' }}>{clinician ? clinician.charAt(0).toUpperCase() : 'D'}</div>
-                <div>
-                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.04em' }}>{clinician}</div>
-                </div>
-              </div>
-              <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderRadius: '12px', background: '#f8fafc', border: '1px solid rgba(226,232,240,1)', padding: '10px 12px' }}>
-                  <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Specialty</span>
-                  <strong style={{ color: '#0f172a', fontSize: '13px' }}>{specialty}</strong>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderRadius: '12px', background: '#f8fafc', border: '1px solid rgba(226,232,240,1)', padding: '10px 12px' }}>
-                  <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Location</span>
-                  <strong style={{ color: '#0f172a', fontSize: '13px' }}>{location}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div className="context-card" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(248,250,252,0.96))', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '18px', padding: '18px', boxShadow: '0 12px 26px rgba(148, 163, 184, 0.08)' }}>
-              <div className="section-label" style={{ marginBottom: '10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748b', fontWeight: 800 }}>Live Verification Status</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '12px', background: '#f8fafc', border: '1px solid rgba(226,232,240,1)', padding: '10px 12px' }}>
-                  <span style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Coverage</span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#ecfdf5', color: '#15803d', border: '1px solid rgba(22,163,74,0.15)', padding: '6px 8px', fontSize: '11px', fontWeight: 800 }}>Verified</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '12px', background: '#f8fafc', border: '1px solid rgba(226,232,240,1)', padding: '10px 12px' }}>
-                  <span style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Priority</span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: '#fef3c7', color: '#b45309', border: '1px solid rgba(251,191,36,0.2)', padding: '6px 8px', fontSize: '11px', fontWeight: 800 }}>High</span>
-                </div>
-              </div>
-            </div>
-          </aside>
-
-          <main className="automation-and-analytics-hub" style={{ flex: '1', height: '100%', overflowY: 'auto', padding: '24px', background: 'linear-gradient(180deg, rgba(255,255,255,0.78), rgba(248,250,252,0.94))', display: 'flex', flexDirection: 'column', gap: '18px', minWidth: 0, boxSizing: 'border-box' }}>
-            {activeTab === 'copilot' ? (
-              <>
-                <section className="cost-analysis-banner" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.94))', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '18px', boxShadow: '0 12px 26px rgba(148, 163, 184, 0.08)', overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', width: '100%' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px 14px', borderRight: '1px solid rgba(226,232,240,0.8)', minHeight: '90px' }}>
+                  <section className="cost-analysis-banner" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.94))', border: '1px solid rgba(226,232,240,0.9)', borderRadius: '18px', boxShadow: '0 12px 26px rgba(148, 163, 184, 0.08)', overflow: 'hidden' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', width: '100%' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px 14px', borderRight: '1px solid rgba(226,232,240,0.8)', borderBottom: '1px solid rgba(226,232,240,0.8)', minHeight: '90px' }}>
                       <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Target Code</span>
                       <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#0f172a' }}>{procedureDisplay}</strong>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px 14px', borderRight: '1px solid rgba(226,232,240,0.8)', minHeight: '90px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px 14px', borderBottom: '1px solid rgba(226,232,240,0.8)', minHeight: '90px' }}>
                       <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Approval Scope</span>
                       <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#0f172a' }}>{insurance} policy review • clinical necessity evaluation</strong>
                     </div>
@@ -978,7 +1102,7 @@ export default function App() {
                       <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Contracted / Allowed Amount</span>
                       <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#0f172a' }}>{formatMoney(costBreakdown?.allowedAmount)}</strong>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px 14px', minHeight: '90px', background: 'linear-gradient(135deg, #ecfdf5, #f0fdf4)', borderLeft: '1px solid rgba(34,197,94,0.18)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px 14px', minHeight: '90px', background: 'linear-gradient(135deg, #ecfdf5, #f0fdf4)' }}>
                       <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>Patient Financial Responsibility</span>
                       <strong style={{ fontSize: '13px', lineHeight: 1.45, color: '#166534' }}>{formatMoney(costBreakdown?.patientResponsibility)}</strong>
                     </div>
@@ -1005,7 +1129,7 @@ export default function App() {
                     </span>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
                     <EOBField label="Billed Charges" value={formatMoney(costBreakdown?.billedCharges)} />
                     <EOBField label="Plan Discount" value={formatMoney(costBreakdown?.planDiscount)} />
                     <EOBField label="Deductible Applied" value={formatMoney(costBreakdown?.deductibleApplied)} />
@@ -1019,11 +1143,9 @@ export default function App() {
                     <EOBField label="Estimated Plan Payment" value={formatMoney(costBreakdown?.planPaid)} highlight="indigo" />
                   </div>
                 </section>
-
-                <div className="alert-banner" style={{ background: 'linear-gradient(135deg, #fff7ed, #fffbeb)', border: '1px solid rgba(251, 191, 36, 0.2)', color: '#7c2d12', borderRadius: '16px', padding: '16px 15px', fontSize: '14.5px', lineHeight: 1.6, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5)' }}>
-                  <div className="alert-title" style={{ marginBottom: '6px', fontWeight: 800, color: '#b45309' }}>⚡ Intercepted Missing Authorization</div>
-                  {alertBannerText}
                 </div>
+
+                <div className="right-column" style={{ overflowY: 'auto', padding: '24px', background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(248,250,252,0.96))', display: 'flex', flexDirection: 'column', gap: '18px', minWidth: 0, minHeight: 0, boxSizing: 'border-box' }}>
 
                 <section className="assistant-panel" style={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(226, 232, 240, 0.95)', borderRadius: '18px', padding: '16px', boxShadow: '0 12px 28px rgba(148, 163, 184, 0.08)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>ClaimAuth Assistant</h3>
@@ -1058,6 +1180,24 @@ export default function App() {
                       <StepIndicator steps={REVIEW_STEPS} currentIndex={reviewStep} onSelect={setReviewStep} />
 
                       {reviewStep === 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                          <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
+                            These are the standard prior-authorization data fields — based on the X12 278 transaction set most payers' forms are built around, not this specific payer's actual form, since none is connected here. Each value shows exactly where it came from; anything missing says so instead of being filled in.
+                          </p>
+                          {requestFieldSections.map((section) => (
+                            <div key={section.title} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>{section.title}</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {section.fields.map((f) => (
+                                  <FieldRow key={f.label} label={f.label} value={f.value} source={f.source} />
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {reviewStep === 1 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                           <div className="checklist-panel" style={{ background: 'linear-gradient(135deg, #f8fafc, #edf2ff)', border: '1px solid rgba(165,180,252,0.2)', borderRadius: '14px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <div className="checklist-title" style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#4338ca', fontWeight: 800 }}>Payer Guideline Criteria Validation Checklist</div>
@@ -1078,7 +1218,7 @@ export default function App() {
                         </div>
                       )}
 
-                      {reviewStep === 1 && (
+                      {reviewStep === 2 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                           <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
                             These are the structured chart entries the AI checked before drafting the justification — not a summary of a clinical note, since none is on file for this patient in this system. Verify against the chart before submitting.
@@ -1096,7 +1236,7 @@ export default function App() {
                         </div>
                       )}
 
-                      {reviewStep === 2 && (
+                      {reviewStep === 3 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                           <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
                             Final check before submitting. This confirms what's about to go out and to whom.
@@ -1192,28 +1332,6 @@ export default function App() {
                           <EOBField label="Estimated Patient Responsibility" value={formatMoney(costBreakdown?.patientResponsibility)} highlight="green" />
                         </div>
 
-                        <div style={{ borderTop: '1px dashed rgba(148,163,184,0.4)', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          <button
-                            type="button"
-                            onClick={() => setPayloadExpanded((prev) => !prev)}
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', textAlign: 'left' }}
-                            aria-expanded={payloadExpanded}
-                          >
-                            <span style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>FHIR Claim Payload (Da Vinci PAS shape)</span>
-                            <span style={{ fontSize: '12px', fontWeight: 800, color: '#4338ca' }}>{payloadExpanded ? 'Hide ▲' : 'Show ▼'}</span>
-                          </button>
-                          {payloadExpanded && (
-                            <>
-                              <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: '#64748b' }}>
-                                This is the FHIR <code>Claim</code> resource (<code>use: "preauthorization"</code>) that a real integration would <code>$submit</code> to a payer's or clearinghouse's Prior Authorization Support (PAS) endpoint. No such endpoint is connected here, so nothing beyond this preview happens.
-                              </p>
-                              <pre style={{ margin: 0, maxHeight: '260px', overflow: 'auto', background: '#0f172a', color: '#c7d2fe', borderRadius: '10px', padding: '14px', fontSize: '11px', lineHeight: 1.6, fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace' }}>
-                                {JSON.stringify(authDetails.payload, null, 2)}
-                              </pre>
-                            </>
-                          )}
-                        </div>
-
                         <button
                           type="button"
                           onClick={handleCloseSubmission}
@@ -1225,34 +1343,59 @@ export default function App() {
                     </>
                   )}
                 </section>
-              </>
-            ) : (
-              <div className="audit-panel" style={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(226,232,240,0.95)', borderRadius: '18px', padding: '18px', boxShadow: '0 12px 28px rgba(148, 163, 184, 0.08)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Local Activity Log</h3>
-                    <p style={{ margin: '6px 0 0', fontSize: '11.5px', lineHeight: 1.5, color: '#94a3b8', maxWidth: '380px' }}>
-                      Recorded on this device only, for {patient?.name || 'this patient'}. Not synced with your EHR, a clearinghouse, or any payer — there's no live connection for it to sync to.
-                      {!patient?.id && ' No stable patient ID was available from this launch, so this session\u2019s entries won\u2019t be saved after you reload — that\u2019s intentional, to avoid mixing up patients who share a name.'}
-                    </p>
-                  </div>
-                  {activityLog.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={clearActivityLog}
-                      style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textDecoration: 'underline', whiteSpace: 'nowrap' }}
-                    >
-                      Clear log
-                    </button>
-                  )}
                 </div>
+              </div>
+          </div>
+        </div>
 
-                {activityLog.length === 0 ? (
-                  <div style={{ fontSize: '12.5px', color: '#94a3b8', fontStyle: 'italic', padding: '8px 2px' }}>
-                    No activity recorded yet for this patient. Actions like drafting a justification or submitting a request will show up here.
-                  </div>
-                ) : (
-                  activityLog.map((entry) => (
+        {showActivityLog && (
+          <div
+            className="activity-log-overlay"
+            style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'grid', placeItems: 'center', zIndex: 50, padding: '24px' }}
+            onClick={() => setShowActivityLog(false)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Local activity log"
+              onClick={(e) => e.stopPropagation()}
+              style={{ background: '#fff', borderRadius: '20px', maxWidth: '560px', width: '100%', maxHeight: '80vh', overflowY: 'auto', padding: '22px', boxShadow: '0 30px 60px rgba(15,23,42,0.25)', boxSizing: 'border-box' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', marginBottom: '16px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>Local Activity Log</h3>
+                  <p style={{ margin: '6px 0 0', fontSize: '11.5px', lineHeight: 1.5, color: '#94a3b8', maxWidth: '420px' }}>
+                    Recorded on this device only, for {patient?.name || 'this patient'}. Not synced with your EHR, a clearinghouse, or any payer — there's no live connection for it to sync to.
+                    {!patient?.id && ' No stable patient ID was available from this launch, so this session\u2019s entries won\u2019t be saved after you reload — that\u2019s intentional, to avoid mixing up patients who share a name.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowActivityLog(false)}
+                  aria-label="Close activity log"
+                  style={{ border: 0, background: '#f1f5f9', borderRadius: '10px', width: '30px', height: '30px', flexShrink: 0, cursor: 'pointer', fontSize: '13px', color: '#64748b', fontWeight: 700 }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {activityLog.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearActivityLog}
+                  style={{ display: 'block', marginBottom: '14px', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textDecoration: 'underline' }}
+                >
+                  Clear log
+                </button>
+              )}
+
+              {activityLog.length === 0 ? (
+                <div style={{ fontSize: '12.5px', color: '#94a3b8', fontStyle: 'italic', padding: '8px 2px' }}>
+                  No activity recorded yet for this patient. Actions like drafting a justification or submitting a request will show up here.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {activityLog.map((entry) => (
                     <div key={entry.id} className="log-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 12px', borderRadius: '14px', border: '1px solid rgba(226,232,240,1)', background: '#f8fafc' }}>
                       <div style={{ minWidth: 0 }}>
                         <div className="log-title" style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{entry.label}</div>
@@ -1264,12 +1407,12 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
-            )}
-          </main>
-        </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <footer className="panel-footer" style={{ padding: '14px 16px 18px', textAlign: 'center', fontSize: '9px', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', background: 'rgba(248,250,252,0.9)', borderTop: '1px solid rgba(226,232,240,0.9)' }}>🛡️ Enterprise Gateway • OAuth2 Certified • HIPAA Compliant</footer>
       </div>
