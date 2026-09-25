@@ -882,6 +882,12 @@ export default function App() {
   }
   const selectedCoverage = coverages.find((c) => c.id === selectedCoverageId) || coverages[0] || null;
   const insurance = selectedCoverage?.payerName || 'Coverage pending';
+  // Reuses the activity log (already tracked per-payer) instead of adding
+  // separate state — finds the most recent submission for whichever payer
+  // is currently selected, so the idle screen can say so instead of
+  // looking like a blank slate right after switching back to a payer
+  // that was already submitted.
+  const priorSubmissionForCurrentPayer = activityLog.find((e) => e.payer === insurance && e.label.startsWith('Submitted'));
   const costBreakdown = resolveCostBreakdown(
     selectedCoverage?.resource ? { entry: [{ resource: selectedCoverage.resource }] } : null,
     eobBundle,
@@ -1247,7 +1253,15 @@ export default function App() {
                 <div className="right-column" style={{ overflow: 'hidden', padding: '24px', background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(248,250,252,0.96))', display: 'flex', flexDirection: 'column', gap: '18px', minWidth: 0, minHeight: 0, boxSizing: 'border-box' }}>
 
                 <section className="assistant-panel" style={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(226, 232, 240, 0.95)', borderRadius: '18px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', flex: '1', minHeight: 0, overflow: 'hidden' }}>
-                  <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800, flexShrink: 0 }}>ClaimAuth Assistant</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexShrink: 0 }}>
+                    <h3 style={{ margin: 0, fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 }}>ClaimAuth Assistant</h3>
+                    {priorSubmissionForCurrentPayer && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', borderRadius: '999px', background: '#ecfdf5', border: '1px solid rgba(22,163,74,0.18)', color: '#15803d', padding: '4px 9px', fontSize: '10px', fontWeight: 800 }}>
+                        ✓ Already submitted
+                        <InfoTooltip text={`Ref: ${priorSubmissionForCurrentPayer.referenceId} • ${new Date(priorSubmissionForCurrentPayer.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}. Running the engine again starts a new, separate review for this payer — it won't change or duplicate that submission.`} />
+                      </span>
+                    )}
+                  </div>
 
                   <div style={{ flex: '1', minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   {aiStatus === 'idle' && (
