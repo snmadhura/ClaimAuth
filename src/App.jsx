@@ -769,18 +769,21 @@ export default function App() {
       });
   }, []);
 
-  // Default to the primary coverage once we know what's available. If the
-  // admin later switches to a secondary payer, everything downstream
-  // (cost breakdown, justification, payload) needs to be regenerated for
-  // that payer — so switching also resets the in-progress review rather
-  // than silently submitting content that was drafted against a different
-  // payer's numbers.
+  // Default to the primary coverage once we know what's available — using
+  // the actual displayed list (coverages), not just the raw real-data one,
+  // so this also covers the all-demo case (zero real coverages). Without
+  // that, selectedCoverageId could stay null forever while the UI still
+  // visually defaulted to showing Primary as selected — a real mismatch
+  // where clicking the already-selected card looked like a fresh switch
+  // and reset the in-progress review unexpectedly. Also re-validates
+  // whenever the current selection no longer exists in the list (e.g. the
+  // demo toggle changes what's available), not just once on first load.
   useEffect(() => {
-    const list = resolveCoverageList(coverageBundle);
-    if (list.length > 0 && !selectedCoverageId) {
-      setSelectedCoverageId(list[0].id);
+    const validIds = coverages.map((c) => c.id);
+    if (validIds.length > 0 && !validIds.includes(selectedCoverageId)) {
+      setSelectedCoverageId(validIds[0]);
     }
-  }, [coverageBundle]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [coverageBundle, showDemoSecondary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectCoverage = (coverageId) => {
     if (coverageId === selectedCoverageId) return;
@@ -1138,30 +1141,47 @@ export default function App() {
                               : '1px solid rgba(226,232,240,1)',
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '9px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 800, color: isSelected ? '#7D3F81' : '#64748b', background: isSelected ? 'rgba(255,255,255,0.7)' : '#e2e8f0', borderRadius: '999px', padding: '3px 8px' }}>
-                              {c.rank}
-                            </span>
-                            {c.isDemo && (
-                              <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#b45309', background: '#fef3c7', borderRadius: '999px', padding: '3px 7px' }}>TEST DATA</span>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              marginTop: '3px',
+                              width: '15px',
+                              height: '15px',
+                              borderRadius: '50%',
+                              flexShrink: 0,
+                              boxSizing: 'border-box',
+                              background: '#fff',
+                              border: isSelected ? '4.5px solid #7D3F81' : '1.5px solid #cbd5e1',
+                            }}
+                          />
+                          <div style={{ flex: '1', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '9px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 800, color: isSelected ? '#7D3F81' : '#64748b', background: isSelected ? 'rgba(255,255,255,0.7)' : '#e2e8f0', borderRadius: '999px', padding: '3px 8px' }}>
+                                  {c.rank}
+                                </span>
+                                {c.isDemo && (
+                                  <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#b45309', background: '#fef3c7', borderRadius: '999px', padding: '3px 7px' }}>TEST DATA</span>
+                                )}
+                                {wasSubmitted && (
+                                  <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#15803d', background: '#ecfdf5', border: '1px solid rgba(22,163,74,0.18)', borderRadius: '999px', padding: '3px 7px' }}>✓ SUBMITTED</span>
+                                )}
+                              </span>
+                              <span style={{ fontSize: '9.5px', fontWeight: 800, color: isActiveStatus ? '#15803d' : '#b91c1c' }}>
+                                ● {isActiveStatus ? 'Active' : (c.status || 'Inactive')}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '14px', fontWeight: 800, color: '#1A111E' }}>{c.payerName}</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 14px', fontSize: '10.5px', color: '#64748b' }}>
+                              <span>Member ID: <strong style={{ color: '#334155' }}>{c.memberId || 'Not on file'}</strong></span>
+                              <span>Relationship: <strong style={{ color: '#334155' }}>{c.relationship || 'Not specified'}</strong></span>
+                            </div>
+                            {isSelected && (
+                              <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#7D3F81' }}>✓ Currently reviewing this payer</span>
                             )}
-                            {wasSubmitted && (
-                              <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#15803d', background: '#ecfdf5', border: '1px solid rgba(22,163,74,0.18)', borderRadius: '999px', padding: '3px 7px' }}>✓ SUBMITTED</span>
-                            )}
-                          </span>
-                          <span style={{ fontSize: '9.5px', fontWeight: 800, color: isActiveStatus ? '#15803d' : '#b91c1c' }}>
-                            ● {isActiveStatus ? 'Active' : (c.status || 'Inactive')}
-                          </span>
+                          </div>
                         </div>
-                        <div style={{ fontSize: '14px', fontWeight: 800, color: '#1A111E' }}>{c.payerName}</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 14px', fontSize: '10.5px', color: '#64748b' }}>
-                          <span>Member ID: <strong style={{ color: '#334155' }}>{c.memberId || 'Not on file'}</strong></span>
-                          <span>Relationship: <strong style={{ color: '#334155' }}>{c.relationship || 'Not specified'}</strong></span>
-                        </div>
-                        {isSelected && (
-                          <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#7D3F81' }}>✓ Currently reviewing this payer</span>
-                        )}
                       </button>
                     );
                   })
